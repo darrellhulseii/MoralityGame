@@ -1,0 +1,2390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1a1410">
+<title>The Beacon — A Brackenholm Tale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1a1410; --ink2:#241c14; --parch:#e8dcc0; --parch-dim:#c9b78f;
+    --gold:#d9b25a; --gold-bright:#f0d588; --gold-deep:#8a6a2a;
+    --blood:#b5342c; --blood-deep:#6e1f1a;
+    --weave:#7b8cf0; --weave-deep:#3a47a8;
+    --evil:#8b1a1a; --good:#f2e6b8;
+    --shadow:0 8px 28px rgba(0,0,0,.55);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0a0806;font-family:'Crimson Text',Georgia,serif;color:var(--parch);touch-action:none;}
+  #game{position:fixed;inset:0;}
+  canvas{display:block;position:absolute;inset:0;}
+
+  /* ---------- Generic overlay ---------- */
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;
+    background:radial-gradient(ellipse at center,rgba(26,20,16,.82),rgba(8,6,4,.96));z-index:50;padding:24px;text-align:center;}
+  .hidden{display:none!important;}
+
+  /* ---------- Title ---------- */
+  #title h1{font-family:'Cinzel',serif;font-weight:900;font-size:clamp(38px,12vw,86px);letter-spacing:.06em;
+    color:var(--gold-bright);text-shadow:0 2px 0 var(--gold-deep),0 0 40px rgba(217,178,90,.35);line-height:.95;}
+  #title .sub{font-style:italic;font-size:clamp(15px,4.5vw,22px);color:var(--parch-dim);margin-top:10px;letter-spacing:.12em;}
+  #title .flavor{max-width:520px;margin:22px auto 6px;font-size:clamp(14px,4vw,17px);color:#bfae86;line-height:1.5;font-style:italic;opacity:.92;}
+  .btn-row{display:flex;flex-direction:column;gap:14px;margin-top:30px;width:min(320px,80vw);}
+  .btn{font-family:'Cinzel',serif;font-weight:700;font-size:18px;letter-spacing:.08em;color:var(--ink);
+    background:linear-gradient(180deg,var(--gold-bright),var(--gold));border:1px solid var(--gold-deep);
+    padding:14px 20px;border-radius:3px;cursor:pointer;box-shadow:var(--shadow);transition:transform .12s ease,filter .12s ease;}
+  .btn:active{transform:translateY(2px) scale(.99);filter:brightness(1.08);}
+  .btn.ghost{background:transparent;color:var(--gold-bright);border:1px solid var(--gold-deep);}
+  .btn.danger{background:linear-gradient(180deg,#d6453c,var(--blood));color:#fff;border-color:var(--blood-deep);}
+  .hint{margin-top:26px;font-size:13px;color:#8a7d60;letter-spacing:.05em;line-height:1.6;max-width:440px;}
+  .hint b{color:var(--parch-dim);font-weight:600;}
+
+  /* ---------- HUD ---------- */
+  #hud{position:absolute;inset:0;pointer-events:none;z-index:20;font-family:'Cinzel',serif;}
+  #stats{position:absolute;top:max(10px,env(safe-area-inset-top));left:max(10px,env(safe-area-inset-left));
+    display:flex;flex-direction:column;gap:6px;}
+  .bar{width:min(46vw,210px);height:16px;background:rgba(10,8,6,.6);border:1px solid rgba(0,0,0,.6);
+    border-radius:9px;overflow:hidden;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.5),inset 0 0 0 1px rgba(217,178,90,.25);}
+  .bar > i{display:block;height:100%;width:100%;transition:width .25s ease;border-radius:9px;}
+  #hpFill{background:linear-gradient(180deg,#e0584e,var(--blood));}
+  #mpFill{background:linear-gradient(180deg,#9aa8ff,var(--weave-deep));}
+  .bar span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;
+    letter-spacing:.08em;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.9);}
+  #purse{display:flex;gap:14px;align-items:center;margin-top:2px;font-size:14px;color:var(--gold-bright);
+    text-shadow:0 1px 2px #000;}
+  #purse .chip{display:flex;align-items:center;gap:5px;background:rgba(10,8,6,.55);padding:3px 9px;border-radius:20px;
+    border:1px solid rgba(217,178,90,.3);pointer-events:auto;cursor:pointer;}
+  #purse .chip .dot{width:12px;height:12px;border-radius:50%;}
+  .coin{background:radial-gradient(circle at 35% 30%,#ffe9a8,var(--gold) 70%);box-shadow:0 0 4px var(--gold);}
+  .vial{background:radial-gradient(circle at 35% 30%,#ff8a7a,var(--blood));box-shadow:0 0 4px var(--blood);}
+
+  /* Morality meter */
+  #moral{position:absolute;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    width:min(62vw,300px);text-align:center;}
+  #moralBar{height:10px;border-radius:6px;position:relative;overflow:hidden;border:1px solid rgba(0,0,0,.6);
+    background:linear-gradient(90deg,#7a1414,#3a2418 38%,#3a3424 50%,#5a4f2a 62%,#f2e6b8);box-shadow:inset 0 0 0 1px rgba(0,0,0,.3);}
+  #moralMark{position:absolute;top:-3px;width:4px;height:16px;background:#fff;border-radius:2px;transform:translateX(-50%);
+    box-shadow:0 0 6px rgba(255,255,255,.8);transition:left .35s ease;left:50%;}
+  #moralLabel{font-size:11px;letter-spacing:.18em;color:var(--parch-dim);margin-top:5px;text-transform:uppercase;}
+
+  /* Quest tracker */
+  #tracker{position:absolute;top:max(60px,calc(env(safe-area-inset-top) + 50px));left:50%;transform:translateX(-50%);
+    max-width:min(72vw,360px);text-align:center;font-family:'Crimson Text',serif;}
+  #tracker .lbl{font-size:10px;letter-spacing:.25em;color:var(--gold);text-transform:uppercase;}
+  #tracker .obj{font-size:15px;color:var(--parch);text-shadow:0 1px 3px #000;font-style:italic;line-height:1.25;}
+
+  /* Top-right buttons */
+  #topRight{position:absolute;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));
+    display:flex;gap:8px;pointer-events:auto;}
+  .icobtn{width:42px;height:42px;border-radius:8px;background:rgba(20,15,10,.7);border:1px solid rgba(217,178,90,.35);
+    color:var(--gold-bright);font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:var(--shadow);transition:transform .1s;}
+  .icobtn:active{transform:scale(.92);}
+
+  /* Boss bar */
+  #bossWrap{position:absolute;top:max(64px,calc(env(safe-area-inset-top) + 54px));left:50%;transform:translateX(-50%);
+    width:min(84vw,520px);text-align:center;}
+  #bossName{font-family:'Cinzel',serif;font-weight:700;letter-spacing:.1em;color:#e0a0a0;font-size:15px;
+    text-shadow:0 0 12px rgba(180,40,40,.6),0 1px 2px #000;}
+  #bossBar{height:13px;margin-top:4px;border-radius:7px;overflow:hidden;border:1px solid #3a0a0a;background:rgba(10,4,4,.7);}
+  #bossFill{height:100%;width:100%;background:linear-gradient(180deg,#e85a4a,#7a1414);transition:width .2s ease;}
+
+  /* ---------- Touch controls ---------- */
+  #controls{position:absolute;inset:0;pointer-events:none;z-index:25;}
+  #stick{position:absolute;left:max(22px,env(safe-area-inset-left));bottom:max(34px,calc(env(safe-area-inset-bottom) + 18px));
+    width:130px;height:130px;border-radius:50%;background:radial-gradient(circle,rgba(40,30,20,.32),rgba(20,15,10,.12));
+    border:2px solid rgba(217,178,90,.28);pointer-events:auto;touch-action:none;}
+  #stickNub{position:absolute;left:50%;top:50%;width:56px;height:56px;border-radius:50%;transform:translate(-50%,-50%);
+    background:radial-gradient(circle at 38% 32%,var(--gold-bright),var(--gold-deep));border:1px solid rgba(0,0,0,.4);
+    box-shadow:0 3px 10px rgba(0,0,0,.5);}
+  #btns{position:absolute;right:max(18px,env(safe-area-inset-right));bottom:max(28px,calc(env(safe-area-inset-bottom) + 14px));
+    width:200px;height:200px;pointer-events:none;}
+  .abtn{position:absolute;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    pointer-events:auto;touch-action:none;cursor:pointer;font-family:'Cinzel',serif;color:#fff;
+    box-shadow:0 4px 12px rgba(0,0,0,.5);border:1px solid rgba(0,0,0,.35);transition:transform .07s,filter .1s;}
+  .abtn:active{transform:scale(.9);filter:brightness(1.15);}
+  .abtn .ic{font-size:22px;line-height:1;}
+  .abtn .tx{font-size:8.5px;letter-spacing:.06em;opacity:.85;margin-top:1px;text-transform:uppercase;}
+  #bAttack{right:6px;bottom:64px;width:78px;height:78px;background:radial-gradient(circle at 38% 30%,#d6453c,var(--blood-deep));}
+  #bWeave{right:78px;bottom:18px;width:62px;height:62px;background:radial-gradient(circle at 38% 30%,#9aa8ff,var(--weave-deep));}
+  #bInteract{right:96px;bottom:96px;width:58px;height:58px;background:radial-gradient(circle at 38% 30%,#e7c66a,var(--gold-deep));color:#1a1410;}
+  #bSwap{right:18px;bottom:150px;width:48px;height:48px;background:radial-gradient(circle at 38% 30%,#6a5a44,#332a1e);font-size:9px;}
+  #bDodge{right:150px;bottom:54px;width:50px;height:50px;background:radial-gradient(circle at 38% 30%,#7fae8f,#2a4a36);}
+  .abtn.cool{filter:grayscale(.6) brightness(.6);}
+  .abtn .cd{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(0,0,0,.55) var(--cd),transparent 0);}
+
+  /* Weave wheel */
+  #weaveWheel{position:absolute;right:120px;bottom:90px;display:flex;gap:10px;pointer-events:none;z-index:26;}
+  #weaveWheel .spell{width:58px;height:58px;border-radius:50%;pointer-events:auto;cursor:pointer;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:'Cinzel',serif;
+    box-shadow:0 4px 12px rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18);transition:transform .1s;
+    transform:scale(0);opacity:0;}
+  #weaveWheel.open .spell{transform:scale(1);opacity:1;}
+  #weaveWheel .spell:nth-child(1){transition-delay:.02s;}
+  #weaveWheel .spell:nth-child(2){transition-delay:.06s;}
+  #weaveWheel .spell:nth-child(3){transition-delay:.1s;}
+  #weaveWheel .spell:active{filter:brightness(1.2);}
+  #weaveWheel .spell .ic{font-size:20px;}
+  #weaveWheel .spell .mc{font-size:9px;opacity:.85;}
+  .sp-ember{background:radial-gradient(circle at 38% 30%,#ffb05a,#8a3a10);}
+  .sp-shove{background:radial-gradient(circle at 38% 30%,#9ad0ff,#1a4a7a);}
+  .sp-still{background:radial-gradient(circle at 38% 30%,#bfeaff,#2a6a8a);}
+
+  /* ---------- Dialogue ---------- */
+  #dialogue{position:absolute;left:50%;bottom:max(20px,env(safe-area-inset-bottom));transform:translateX(-50%);
+    width:min(94vw,640px);background:linear-gradient(180deg,rgba(36,28,20,.97),rgba(22,16,11,.98));
+    border:1px solid var(--gold-deep);border-radius:10px;padding:16px 18px 14px;z-index:40;box-shadow:var(--shadow);
+    pointer-events:auto;}
+  #dialogue::before{content:'';position:absolute;inset:4px;border:1px solid rgba(217,178,90,.18);border-radius:7px;pointer-events:none;}
+  #dlgSpeaker{font-family:'Cinzel',serif;font-weight:700;color:var(--gold-bright);font-size:16px;letter-spacing:.05em;
+    margin-bottom:6px;}
+  #dlgSpeaker.narr{color:#a99a78;font-style:italic;font-weight:500;font-family:'Crimson Text',serif;}
+  #dlgText{font-size:17px;line-height:1.45;color:var(--parch);min-height:48px;}
+  #dlgChoices{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+  .choice{font-family:'Crimson Text',serif;font-size:16px;text-align:left;background:rgba(15,11,7,.7);
+    border:1px solid rgba(217,178,90,.3);color:var(--parch);padding:10px 12px;border-radius:5px;cursor:pointer;
+    transition:background .12s,border-color .12s;display:flex;align-items:center;gap:8px;}
+  .choice:active{background:rgba(217,178,90,.16);}
+  .choice .tag{font-size:11px;font-family:'Cinzel',serif;padding:1px 6px;border-radius:10px;letter-spacing:.05em;flex-shrink:0;}
+  .tag.good{background:rgba(242,230,184,.2);color:#f2e6b8;border:1px solid rgba(242,230,184,.4);}
+  .tag.evil{background:rgba(139,26,26,.3);color:#e89090;border:1px solid rgba(180,50,50,.5);}
+  .tag.gold{background:rgba(217,178,90,.2);color:var(--gold-bright);border:1px solid rgba(217,178,90,.45);}
+  #dlgNext{align-self:flex-end;margin-top:10px;font-family:'Cinzel',serif;color:var(--gold-bright);font-size:14px;
+    letter-spacing:.1em;cursor:pointer;padding:6px 14px;border:1px solid var(--gold-deep);border-radius:4px;
+    background:rgba(217,178,90,.08);}
+
+  /* Interact prompt */
+  #prompt{position:absolute;left:50%;transform:translateX(-50%);bottom:max(180px,calc(env(safe-area-inset-bottom) + 168px));
+    z-index:22;pointer-events:none;background:rgba(15,11,7,.82);border:1px solid var(--gold-deep);border-radius:20px;
+    padding:7px 16px;font-family:'Cinzel',serif;font-size:13px;color:var(--gold-bright);letter-spacing:.06em;
+    text-shadow:0 1px 2px #000;display:flex;align-items:center;gap:7px;animation:bob 1.6s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translate(-50%,0);}50%{transform:translate(-50%,-4px);}}
+
+  /* Narrator toast */
+  #toast{position:absolute;left:50%;top:max(120px,calc(env(safe-area-inset-top) + 108px));transform:translateX(-50%);
+    z-index:30;pointer-events:none;max-width:min(86vw,560px);text-align:center;}
+  .toastMsg{font-family:'Crimson Text',serif;font-style:italic;font-size:17px;line-height:1.4;color:var(--parch);
+    background:linear-gradient(180deg,rgba(26,20,16,.9),rgba(16,11,7,.92));border:1px solid rgba(217,178,90,.3);
+    border-left:3px solid var(--gold);border-radius:6px;padding:11px 16px;margin-bottom:8px;box-shadow:var(--shadow);
+    animation:toastIn .4s ease, toastOut .5s ease forwards;animation-delay:0s,5.5s;}
+  @keyframes toastIn{from{opacity:0;transform:translateY(-12px);}to{opacity:1;transform:none;}}
+  @keyframes toastOut{to{opacity:0;transform:translateY(-8px);}}
+
+  /* ---------- Modals (shop / codex / menu) ---------- */
+  #modal{position:absolute;inset:0;z-index:45;display:flex;align-items:center;justify-content:center;padding:18px;
+    background:rgba(8,6,4,.8);}
+  .panel{width:min(94vw,560px);max-height:84vh;overflow-y:auto;background:linear-gradient(180deg,#2a2016,#1a1410);
+    border:1px solid var(--gold-deep);border-radius:12px;padding:20px;box-shadow:var(--shadow);position:relative;}
+  .panel h2{font-family:'Cinzel',serif;color:var(--gold-bright);font-size:23px;letter-spacing:.05em;margin-bottom:4px;
+    border-bottom:1px solid rgba(217,178,90,.25);padding-bottom:10px;}
+  .panel .psub{font-style:italic;color:var(--parch-dim);font-size:14px;margin-bottom:14px;}
+  .panel .close{position:absolute;top:14px;right:16px;font-size:24px;color:var(--parch-dim);cursor:pointer;line-height:1;}
+  .shopItem,.codexItem{display:flex;align-items:center;gap:12px;padding:11px;border:1px solid rgba(217,178,90,.18);
+    border-radius:7px;margin-bottom:9px;background:rgba(15,11,7,.45);}
+  .shopItem .info,.codexItem .info{flex:1;}
+  .shopItem .info b,.codexItem .info b{font-family:'Cinzel',serif;color:var(--parch);font-size:15px;font-weight:700;display:block;}
+  .shopItem .info small,.codexItem .info small{color:var(--parch-dim);font-size:13px;line-height:1.35;}
+  .buy{font-family:'Cinzel',serif;font-size:13px;background:linear-gradient(180deg,var(--gold-bright),var(--gold));
+    color:var(--ink);border:1px solid var(--gold-deep);padding:8px 14px;border-radius:5px;cursor:pointer;white-space:nowrap;}
+  .buy:active{filter:brightness(1.1);}
+  .buy.disabled{background:#4a4030;color:#8a7d60;cursor:not-allowed;border-color:#3a3424;}
+  .codexItem{align-items:flex-start;}
+  .codexCat{font-family:'Cinzel',serif;color:var(--gold);font-size:13px;letter-spacing:.18em;text-transform:uppercase;
+    margin:16px 0 8px;border-bottom:1px solid rgba(217,178,90,.15);padding-bottom:4px;}
+
+  /* Hit flash / vignette */
+  #hurt{position:absolute;inset:0;z-index:15;pointer-events:none;box-shadow:inset 0 0 120px 30px rgba(180,30,30,0);
+    transition:box-shadow .12s ease;}
+  #fade{position:absolute;inset:0;z-index:48;pointer-events:none;background:#000;opacity:0;transition:opacity .8s ease;}
+
+  /* Ending */
+  #ending h1{font-family:'Cinzel',serif;font-weight:900;font-size:clamp(30px,9vw,60px);letter-spacing:.05em;margin-bottom:14px;}
+  #ending .etext{max-width:560px;font-size:clamp(15px,4.4vw,19px);line-height:1.6;color:var(--parch);font-style:italic;
+    margin-bottom:10px;}
+  #ending .estats{color:var(--parch-dim);font-size:14px;margin:18px 0;letter-spacing:.05em;}
+
+  #loadErr{position:absolute;inset:0;z-index:99;display:none;align-items:center;justify-content:center;flex-direction:column;
+    background:#1a1410;color:#e0a0a0;font-family:'Crimson Text',serif;padding:30px;text-align:center;font-size:16px;line-height:1.6;}
+</style>
+</head>
+<body>
+<div id="game">
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="stats">
+      <div class="bar"><i id="hpFill"></i><span id="hpText">100 / 100</span></div>
+      <div class="bar"><i id="mpFill"></i><span id="mpText">50 / 50</span></div>
+      <div id="purse">
+        <div class="chip" id="goldChip"><span class="dot coin"></span><span id="goldVal">0</span></div>
+        <div class="chip" id="potionChip"><span class="dot vial"></span><span id="potionVal">0</span></div>
+      </div>
+    </div>
+    <div id="moral">
+      <div id="moralBar"><div id="moralMark"></div></div>
+      <div id="moralLabel">Untested</div>
+    </div>
+    <div id="tracker">
+      <div class="lbl">Objective</div>
+      <div class="obj" id="objText">—</div>
+    </div>
+    <div id="topRight">
+      <div class="icobtn" id="btnCodex">❖</div>
+      <div class="icobtn" id="btnMenu">☰</div>
+    </div>
+    <div id="bossWrap" class="hidden">
+      <div id="bossName">—</div>
+      <div id="bossBar"><div id="bossFill"></div></div>
+    </div>
+  </div>
+
+  <!-- Touch controls -->
+  <div id="controls" class="hidden">
+    <div id="stick"><div id="stickNub"></div></div>
+    <div id="btns">
+      <div class="abtn" id="bInteract"><span class="ic">✦</span><span class="tx">Talk</span></div>
+      <div class="abtn" id="bAttack"><span class="ic">⚔</span><span class="tx">Strike</span></div>
+      <div class="abtn" id="bWeave"><span class="ic">✺</span><span class="tx">Weave</span></div>
+      <div class="abtn" id="bDodge"><span class="ic">↯</span><span class="tx">Roll</span></div>
+      <div class="abtn" id="bSwap"><span class="tx" id="swapLbl">Bow</span></div>
+    </div>
+    <div id="weaveWheel">
+      <div class="spell sp-ember" data-spell="ember"><span class="ic">🔥</span><span class="mc">15</span></div>
+      <div class="spell sp-shove" data-spell="shove"><span class="ic">💨</span><span class="mc">20</span></div>
+      <div class="spell sp-still" data-spell="still"><span class="ic">❄</span><span class="mc">18</span></div>
+    </div>
+  </div>
+
+  <div id="prompt" class="hidden"><span>✦</span><span id="promptText">Speak</span></div>
+  <div id="toast"></div>
+
+  <!-- Dialogue -->
+  <div id="dialogue" class="hidden">
+    <div id="dlgSpeaker">—</div>
+    <div id="dlgText"></div>
+    <div id="dlgChoices"></div>
+    <div id="dlgNext" class="hidden">Continue ▸</div>
+  </div>
+
+  <div id="hurt"></div>
+  <div id="fade"></div>
+
+  <!-- Title -->
+  <div id="title" class="overlay">
+    <h1>THE&nbsp;BEACON</h1>
+    <div class="sub">A&nbsp;Brackenholm&nbsp;Tale</div>
+    <p class="flavor">A land of green hills, charming villages, and an alarming number of people who'd happily stab you for a copper. You were one of them — the stabbing-for-coppers sort. We all start somewhere.</p>
+    <div class="btn-row">
+      <button class="btn" id="newGame">Begin Anew</button>
+      <button class="btn ghost" id="continueGame">Continue</button>
+    </div>
+    <div class="hint">
+      <b>Desktop:</b> WASD/Arrows move · <b>J</b> strike · <b>K</b> bow · <b>1·2·3</b> weave · <b>Space</b> roll · <b>E</b> speak · <b>Q</b> tonic<br>
+      <b>Touch:</b> left stick to move · right buttons to fight · tap glowing folk to speak
+    </div>
+  </div>
+
+  <!-- Modal mount -->
+  <div id="modal" class="hidden"></div>
+
+  <!-- Ending -->
+  <div id="ending" class="overlay hidden">
+    <h1 id="endTitle">—</h1>
+    <div class="etext" id="endText"></div>
+    <div class="estats" id="endStats"></div>
+    <div class="btn-row">
+      <button class="btn" id="endReplay">Begin Anew</button>
+    </div>
+  </div>
+
+  <div id="loadErr"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+/* ============================================================================
+   THE BEACON — A Brackenholm Tale
+   A single-file 2.5D/3D action-RPG. Three.js r128. Procedural everything.
+   Copyright-safe original cast & world (no Fable IP).
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   1. CONFIG + GLOBAL STATE
+--------------------------------------------------------------------------- */
+const CFG = {
+  SAVE_KEY: 'beacon_brackenholm_save_v1',
+  MOVE_SPEED: 7.2,
+  DODGE_SPEED: 22,
+  DODGE_TIME: 0.26,
+  DODGE_CD: 0.85,
+  CAM_HEIGHT: 11,
+  CAM_DIST: 13,
+  WORLD_MIN_X: -60, WORLD_MAX_X: 60,
+  WORLD_MIN_Z: -22, WORLD_MAX_Z: 150,   // town near 0, Beacon far +Z
+  ATTACK_CD: 0.42,
+  BOW_CD: 0.5,
+  MELEE_RANGE: 3.0,
+  MELEE_DMG: 18,
+  BOW_DMG: 22,
+};
+
+// Persistent, save-able player/world state.
+function freshState(){
+  return {
+    name: 'Wren',
+    hp: 100, maxHp: 100,
+    mp: 50, maxMp: 50,
+    gold: 25,
+    potions: 1,
+    morality: 0,            // -100 (Horn) .. +100 (Halo)
+    weapon: 'sword',        // 'sword' | 'bow'
+    weaponUnlocked: { sword:true, bow:false },
+    weaveUnlocked: false,
+    dmgBonus: 0,
+    bowBonus: 0,
+    weaveBonus: 0,
+    spellCostMul: 1,
+    dogBond: 0,
+    ownsCottage: false,
+    flags: {},              // quest + dialogue flags
+    treasures: {},          // claimed treasure ids
+    objective: 'Find the ember-reader in Carrowgate square.',
+    questStage: 0,          // 0 intro .. 5 finale
+  };
+}
+let S = freshState();
+
+// Volatile runtime (not saved).
+const RT = {
+  started:false, loopRunning:false, paused:false, inDialogue:false,
+  invuln:0, lastHurt:99, attackTimer:0, bowTimer:0, dodgeTimer:0, dodgeCdTimer:0,
+  swingT:0, weaveOpen:false,
+  spellCd:{ember:0,shove:0,still:0},
+  spellCdMax:{ember:0.8,shove:1.4,still:3.0},
+  near:null,            // nearest interactable
+  digSpot:null,         // nearby treasure
+  boss:null,            // active boss object
+  bossSpawned:false,
+  gateOpen:false,
+  rentTimer:0,
+};
+
+/* ---------------------------------------------------------------------------
+   2. SAVE / LOAD
+--------------------------------------------------------------------------- */
+function saveGame(){
+  try{
+    S.savedAt = Date.now();
+    localStorage.setItem(CFG.SAVE_KEY, JSON.stringify(S));
+  }catch(e){ /* storage may be unavailable; ignore */ }
+}
+function hasSave(){
+  try{ return !!localStorage.getItem(CFG.SAVE_KEY); }catch(e){ return false; }
+}
+function loadGame(){
+  try{
+    const raw = localStorage.getItem(CFG.SAVE_KEY);
+    if(!raw) return false;
+    const data = JSON.parse(raw);
+    S = Object.assign(freshState(), data);
+    S.flags = data.flags || {};
+    S.treasures = data.treasures || {};
+    S.weaponUnlocked = Object.assign({sword:true,bow:false}, data.weaponUnlocked||{});
+    return true;
+  }catch(e){ return false; }
+}
+
+/* ---------------------------------------------------------------------------
+   3. SMALL UTILITIES
+--------------------------------------------------------------------------- */
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const rand = (a,b)=>a+Math.random()*(b-a);
+const randInt = (a,b)=>Math.floor(rand(a,b+1));
+function dist2D(ax,az,bx,bz){ const dx=ax-bx, dz=az-bz; return Math.sqrt(dx*dx+dz*dz); }
+function $(id){ return document.getElementById(id); }
+
+/* ---------------------------------------------------------------------------
+   4. NARRATOR + TOAST
+--------------------------------------------------------------------------- */
+let toastQueue = [];
+function narrate(msg){
+  const box = $('toast');
+  const el = document.createElement('div');
+  el.className = 'toastMsg';
+  el.textContent = msg;
+  box.appendChild(el);
+  // auto-remove after the CSS animation completes
+  setTimeout(()=>{ if(el.parentNode) el.parentNode.removeChild(el); }, 6200);
+  // keep at most 3 on screen
+  while(box.children.length > 3){ box.removeChild(box.firstChild); }
+}
+function setObjective(text){
+  S.objective = text;
+  const o = $('objText');
+  if(o) o.textContent = text;
+}
+
+/* (Three.js setup, world, player, dog, NPCs, dialogue, combat, input, UI,
+    quest logic, game loop and init are appended below.) */
+
+/* ---------------------------------------------------------------------------
+   5. THREE.JS SETUP
+--------------------------------------------------------------------------- */
+let renderer, scene, camera, clock;
+const WORLD = { obstacles:[], lamps:[], npcMeshes:[], beaconLight:null, gate:null, cottage:null, cottageSign:null };
+
+function initThree(){
+  renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  $('game').insertBefore(renderer.domElement, $('game').firstChild);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xcdd8d2);
+  scene.fog = new THREE.Fog(0xcdd8d2, 44, 168);
+
+  camera = new THREE.PerspectiveCamera(52, window.innerWidth/window.innerHeight, 0.1, 700);
+  camera.position.set(0, CFG.CAM_HEIGHT, -CFG.CAM_DIST);
+
+  // ---- cinematic 3-point lighting ----
+  const hemi = new THREE.HemisphereLight(0xdfeaf2, 0x4a4030, 0.60);
+  scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xfff2d6, 1.5);
+  sun.position.set(-16, 30, -8);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024,1024);
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 95;
+  sun.shadow.camera.left = -22; sun.shadow.camera.right = 22;
+  sun.shadow.camera.top  = 22;  sun.shadow.camera.bottom = -22;
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 0.02;
+  sun.shadow.camera.updateProjectionMatrix();
+  scene.add(sun);
+  scene.add(sun.target);
+  WORLD.sun = sun;
+
+  // cool sky-fill + warm rim, to give faces and forms real shape
+  const fill = new THREE.DirectionalLight(0xaec6e2, 0.34);
+  fill.position.set(24, 16, 18);
+  scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffd9a0, 0.28);
+  rim.position.set(0, 12, 44);
+  scene.add(rim);
+
+  clock = new THREE.Clock();
+  window.addEventListener('resize', onResize);
+}
+function onResize(){
+  if(!renderer) return;
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* ---------------------------------------------------------------------------
+   6. SHARED GEOMETRY / MATERIAL CACHE
+--------------------------------------------------------------------------- */
+const GEO = {};
+const MAT = {};
+const PART = {};   // shared smooth human body-part geometries
+const TEX = {};
+function makeCanvasTex(size, draw, repeat){
+  const c=document.createElement('canvas'); c.width=c.height=size||256;
+  const ctx=c.getContext('2d'); draw(ctx, c.width);
+  const t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  if(repeat) t.repeat.set(repeat,repeat);
+  t.encoding=THREE.sRGBEncoding; t.anisotropy=4;
+  return t;
+}
+function buildAssets(){
+  GEO.box = new THREE.BoxGeometry(1,1,1);
+  GEO.cyl = new THREE.CylinderGeometry(0.5,0.5,1,16);
+  GEO.cone = new THREE.ConeGeometry(0.5,1,18);
+  GEO.sphere = new THREE.SphereGeometry(0.5,20,16);
+  GEO.torus = new THREE.TorusGeometry(0.42,0.06,10,28);
+  GEO.plane = new THREE.PlaneGeometry(1,1);
+
+  // ---- procedural textures (drawn to canvas, no external files) ----
+  TEX.grass = makeCanvasTex(256,(ctx,S)=>{
+    ctx.fillStyle='#5f7a44'; ctx.fillRect(0,0,S,S);
+    for(let i=0;i<2800;i++){ const gr=120+(Math.random()*70|0); ctx.fillStyle='rgba('+(40+(Math.random()*40|0))+','+gr+','+(40+(Math.random()*28|0))+','+(0.3+Math.random()*0.4).toFixed(2)+')'; ctx.fillRect(Math.random()*S,Math.random()*S,1,2+Math.random()*4); }
+    for(let i=0;i<150;i++){ ctx.fillStyle='rgba(150,138,70,0.22)'; ctx.fillRect(Math.random()*S,Math.random()*S,2,2); }
+  }, 46);
+  TEX.stone = makeCanvasTex(256,(ctx,S)=>{
+    ctx.fillStyle='#7d776c'; ctx.fillRect(0,0,S,S);
+    const cell=32;
+    for(let y=0;y<S;y+=cell) for(let x=0;x<S;x+=cell){ const o=((y/cell)%2)?cell/2:0; const sh=70+(Math.random()*40|0); ctx.fillStyle='rgb('+(sh+12)+','+(sh+8)+','+sh+')'; ctx.fillRect(x+o+1.5,y+1.5,cell-3,cell-3); }
+    ctx.strokeStyle='rgba(40,36,30,0.5)'; ctx.lineWidth=2;
+    for(let y=0;y<=S;y+=cell){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(S,y); ctx.stroke(); }
+    for(let i=0;i<500;i++){ ctx.fillStyle='rgba(0,0,0,0.06)'; ctx.fillRect(Math.random()*S,Math.random()*S,2,2); }
+  }, 8);
+  TEX.road = makeCanvasTex(256,(ctx,S)=>{
+    ctx.fillStyle='#867d6f'; ctx.fillRect(0,0,S,S);
+    for(let i=0;i<1000;i++){ const sh=42+(Math.random()*52|0); ctx.fillStyle='rgba('+(sh+18)+','+(sh+10)+','+sh+',0.5)'; ctx.beginPath(); ctx.ellipse(Math.random()*S,Math.random()*S,3+Math.random()*7,2+Math.random()*5,Math.random()*3,0,7); ctx.fill(); }
+  });
+  TEX.road.repeat.set(3,22);
+  TEX.plaster = makeCanvasTex(256,(ctx,S)=>{
+    ctx.fillStyle='#d8c8a4'; ctx.fillRect(0,0,S,S);
+    for(let i=0;i<1800;i++){ ctx.fillStyle='rgba('+(170+(Math.random()*40|0))+','+(150+(Math.random()*40|0))+','+(110+(Math.random()*40|0))+',0.16)'; ctx.fillRect(Math.random()*S,Math.random()*S,2,2); }
+    ctx.strokeStyle='rgba(120,100,70,0.16)'; ctx.lineWidth=1;
+    for(let i=0;i<10;i++){ ctx.beginPath(); let x=Math.random()*S,y=Math.random()*S; ctx.moveTo(x,y); for(let j=0;j<6;j++){ x+=(-10+Math.random()*20); y+=(2+Math.random()*10); ctx.lineTo(x,y); } ctx.stroke(); }
+  }, 2);
+  TEX.shingle = makeCanvasTex(256,(ctx,S)=>{
+    ctx.fillStyle='#7a3a2c'; ctx.fillRect(0,0,S,S);
+    const rh=26, cw=34;
+    for(let y=0,r=0;y<S+rh;y+=rh,r++){ const ox=(r%2)?cw/2:0; for(let x=-cw;x<S+cw;x+=cw){ const sh=92+(Math.random()*40|0); ctx.fillStyle='rgb('+(sh+38)+','+sh+','+(sh-22)+')'; ctx.beginPath(); ctx.moveTo(x+ox,y); ctx.lineTo(x+ox+cw,y); ctx.lineTo(x+ox+cw,y+rh*0.7); ctx.quadraticCurveTo(x+ox+cw/2,y+rh,x+ox,y+rh*0.7); ctx.closePath(); ctx.fill(); ctx.strokeStyle='rgba(40,16,10,0.4)'; ctx.stroke(); } }
+  }, 4);
+  TEX.bark = makeCanvasTex(128,(ctx,S)=>{
+    ctx.fillStyle='#5a4632'; ctx.fillRect(0,0,S,S);
+    for(let i=0;i<60;i++){ ctx.strokeStyle='rgba('+(40+(Math.random()*40|0))+','+(30+(Math.random()*26|0))+','+(20+(Math.random()*16|0))+',0.6)'; ctx.lineWidth=1+Math.random()*2; ctx.beginPath(); let xx=Math.random()*S; ctx.moveTo(xx,0); for(let y=0;y<S;y+=8){ xx+=(-3+Math.random()*6); ctx.lineTo(xx,y); } ctx.stroke(); }
+  });
+
+  // ---- materials (physically-based) ----
+  MAT.grass   = new THREE.MeshStandardMaterial({map:TEX.grass, roughness:1, metalness:0});
+  MAT.cobble  = new THREE.MeshStandardMaterial({map:TEX.stone, roughness:0.95, metalness:0});
+  MAT.cobbleRoad = new THREE.MeshStandardMaterial({map:TEX.road, roughness:0.95, metalness:0});
+  MAT.water   = new THREE.MeshStandardMaterial({color:0x2b4a52, roughness:0.18, metalness:0.15, transparent:true, opacity:0.78});
+  MAT.wall    = new THREE.MeshStandardMaterial({map:TEX.plaster, roughness:0.9, metalness:0});
+  MAT.wall2   = new THREE.MeshStandardMaterial({color:0xc2a878, roughness:0.9});
+  MAT.roof    = new THREE.MeshStandardMaterial({map:TEX.shingle, roughness:0.85, metalness:0});
+  MAT.roof2   = new THREE.MeshStandardMaterial({map:TEX.shingle, color:0x9a8f86, roughness:0.85, metalness:0});
+  MAT.wood    = new THREE.MeshStandardMaterial({map:TEX.bark, roughness:0.85});
+  MAT.darkwood= new THREE.MeshStandardMaterial({color:0x33281c, roughness:0.8});
+  MAT.stone   = new THREE.MeshStandardMaterial({map:TEX.stone, color:0xb8b2a8, roughness:0.9});
+  MAT.leaf    = new THREE.MeshStandardMaterial({color:0x4e6b3a, roughness:0.95});
+  MAT.deadleaf= new THREE.MeshStandardMaterial({color:0x3a3a30, roughness:0.95});
+  MAT.glow    = new THREE.MeshBasicMaterial({color:0xffd27a});
+  MAT.window  = new THREE.MeshStandardMaterial({color:0xffe6a0, emissive:0xffcf73, emissiveIntensity:0.85, roughness:0.4});
+  MAT.mist    = new THREE.MeshBasicMaterial({color:0xb8c0b0, transparent:true, opacity:0.5});
+  MAT.hollowBody = new THREE.MeshStandardMaterial({color:0x244a48, transparent:true, opacity:0.62, emissive:0x123e3a, emissiveIntensity:0.7, roughness:0.5, metalness:0.2});
+  MAT.hollow  = MAT.hollowBody;  // legacy alias
+  MAT.soul    = new THREE.MeshBasicMaterial({color:0xaef0e6, transparent:true, opacity:0.95});
+  MAT.arrow   = new THREE.MeshStandardMaterial({color:0x6a4a2a, roughness:0.7});
+  MAT.ember   = new THREE.MeshBasicMaterial({color:0xffa040});
+  MAT.grief   = new THREE.MeshBasicMaterial({color:0xb088ff});
+
+  // ---- shared, smooth human body-part geometries (reused by every character) ----
+  PART.head     = new THREE.SphereGeometry(0.135,22,18);
+  PART.neck     = new THREE.CylinderGeometry(0.055,0.07,0.12,12);
+  PART.torso    = new THREE.CylinderGeometry(0.20,0.165,0.56,18);
+  PART.hips     = new THREE.CylinderGeometry(0.165,0.185,0.24,18);
+  PART.shoulder = new THREE.SphereGeometry(0.10,14,12);
+  PART.upperArm = new THREE.CylinderGeometry(0.066,0.056,0.34,14);
+  PART.foreArm  = new THREE.CylinderGeometry(0.056,0.046,0.32,14);
+  PART.hand     = new THREE.SphereGeometry(0.062,12,10);
+  PART.joint    = new THREE.SphereGeometry(0.058,12,10);
+  PART.thigh    = new THREE.CylinderGeometry(0.098,0.078,0.42,14);
+  PART.shin     = new THREE.CylinderGeometry(0.072,0.055,0.42,14);
+  PART.foot     = new THREE.BoxGeometry(0.12,0.07,0.27);
+  PART.hair     = new THREE.SphereGeometry(0.152,18,14);
+  PART.eye      = new THREE.SphereGeometry(0.022,8,8);
+  PART.nose     = new THREE.SphereGeometry(0.028,8,8);
+  PART.tail     = new THREE.ConeGeometry(0.22,0.9,14);
+}
+
+// helper: a coloured box mesh at (x,y,z) sized (w,h,d)
+function box(mat,x,y,z,w,h,d){
+  const m = new THREE.Mesh(GEO.box, mat);
+  m.position.set(x,y,z); m.scale.set(w,h,d);
+  m.castShadow=true; m.receiveShadow=true;
+  return m;
+}
+function cyl(mat,x,y,z,r,h){
+  const m = new THREE.Mesh(GEO.cyl, mat);
+  m.position.set(x,y,z); m.scale.set(r*2,h,r*2);
+  m.castShadow=true; m.receiveShadow=true;
+  return m;
+}
+function cone(mat,x,y,z,r,h){
+  const m = new THREE.Mesh(GEO.cone, mat);
+  m.position.set(x,y,z); m.scale.set(r*2,h,r*2);
+  m.castShadow=true; m.receiveShadow=true;
+  return m;
+}
+function sph(mat,x,y,z,r){
+  const m = new THREE.Mesh(GEO.sphere, mat);
+  m.position.set(x,y,z); m.scale.set(r*2,r*2,r*2);
+  m.castShadow=true; m.receiveShadow=true;
+  return m;
+}
+// a mesh from a shared PART geometry, placed at (x,y,z)
+function pm(geo,mat,x,y,z){
+  const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z);
+  m.castShadow=true; m.receiveShadow=true; return m;
+}
+// one limb as a pivot group (rotates about the joint at its top); .lo is the lower segment group
+function makeLimb(upGeo, loGeo, upLen, loLen, mat, jointMat, footGeo){
+  const piv=new THREE.Group();
+  piv.add(pm(upGeo, mat, 0,-upLen/2,0));
+  piv.add(pm(PART.joint, jointMat||mat, 0,-upLen,0));
+  const lo=new THREE.Group(); lo.position.set(0,-upLen,0);
+  lo.add(pm(loGeo, mat, 0,-loLen/2,0));
+  if(footGeo){ lo.add(pm(footGeo, jointMat||mat, 0,-(loLen+0.03),0.06)); }
+  else { lo.add(pm(PART.hand, mat, 0,-loLen,0)); }
+  piv.add(lo); piv.lo=lo;
+  return piv;
+}
+// assemble a smooth, human-proportioned figure. Returns refs for tinting + animation.
+function makeHuman(o){
+  o=o||{};
+  const skin  = new THREE.MeshStandardMaterial({color:o.skin||0xd7a888, roughness:0.72, metalness:0});
+  const shirt = new THREE.MeshStandardMaterial({color:o.shirt||0x6a4a2e, roughness:0.85});
+  const pants = new THREE.MeshStandardMaterial({color:o.pants||0x3c3340, roughness:0.85});
+  const hairM = new THREE.MeshStandardMaterial({color:o.hair||0x2a1d12, roughness:0.9});
+  const shoeM = new THREE.MeshStandardMaterial({color:o.shoe||0x241a12, roughness:0.7});
+  const eyeM  = new THREE.MeshStandardMaterial({color:0x2a2630, roughness:0.4});
+  const g=new THREE.Group();
+
+  // legs (pivots at the hips)
+  const legL=makeLimb(PART.thigh, PART.shin, 0.42,0.42, pants, shoeM, PART.foot); legL.position.set(-0.11,0.88,0);
+  const legR=makeLimb(PART.thigh, PART.shin, 0.42,0.42, pants, shoeM, PART.foot); legR.position.set(0.11,0.88,0);
+  g.add(legL); g.add(legR);
+
+  // hips + torso
+  g.add(pm(PART.hips,  pants, 0,0.98,0));
+  g.add(pm(PART.torso, shirt, 0,1.32,0));
+  g.add(pm(PART.shoulder, shirt, -0.20,1.55,0));
+  g.add(pm(PART.shoulder, shirt,  0.20,1.55,0));
+
+  // arms (pivots at the shoulders)
+  const armL=makeLimb(PART.upperArm, PART.foreArm, 0.34,0.32, shirt, skin, null); armL.position.set(-0.235,1.55,0); armL.rotation.z=0.08;
+  const armR=makeLimb(PART.upperArm, PART.foreArm, 0.34,0.32, shirt, skin, null); armR.position.set( 0.235,1.55,0); armR.rotation.z=-0.08;
+  g.add(armL); g.add(armR);
+  const handR=new THREE.Group(); handR.position.set(0,-0.32,0.04); armR.lo.add(handR);
+
+  // neck + head
+  g.add(pm(PART.neck, skin, 0,1.66,0));
+  const head=pm(PART.head, skin, 0,1.80,0); head.scale.set(1,1.12,1.02); g.add(head);
+  g.add(pm(PART.eye, eyeM, -0.052,1.81,0.118));
+  g.add(pm(PART.eye, eyeM,  0.052,1.81,0.118));
+  g.add(pm(PART.nose, skin, 0,1.775,0.135));
+  const hair=pm(PART.hair, hairM, 0,1.845,-0.02); hair.scale.set(1.03,0.92,1.05); g.add(hair);
+  const fringe=pm(PART.hair, hairM, 0,1.875,0.055); fringe.scale.set(0.9,0.5,0.62); g.add(fringe);
+
+  return { group:g, skin, shirt, pants, hair:hairM, shoe:shoeM, armL, armR, legL, legR, handR, head };
+}
+
+/* ---------------------------------------------------------------------------
+   7. WORLD BUILDING
+--------------------------------------------------------------------------- */
+function obstacle(x,z,r){ WORLD.obstacles.push({x,z,r}); }
+
+function makeGround(){
+  makeSky();
+  // big grass field
+  const g = new THREE.Mesh(GEO.plane, MAT.grass);
+  g.rotation.x = -Math.PI/2;
+  g.scale.set(320,320,1);
+  g.position.set(0,0,60);
+  g.receiveShadow = true;
+  scene.add(g);
+
+  // cobbled town square
+  const sq = new THREE.Mesh(GEO.plane, MAT.cobble);
+  sq.rotation.x = -Math.PI/2;
+  sq.scale.set(44,40,1);
+  sq.position.set(0,0.02,6);
+  sq.receiveShadow = true;
+  scene.add(sq);
+
+  // the road north
+  const road = new THREE.Mesh(GEO.plane, MAT.cobbleRoad);
+  road.rotation.x = -Math.PI/2;
+  road.scale.set(10,70,1);
+  road.position.set(0,0.02,55);
+  road.receiveShadow = true;
+  scene.add(road);
+
+  // marsh water patches in the Drownfen (z 86..120)
+  const patches = [[-12,92,16,12],[10,104,18,14],[-6,116,20,12],[6,84,12,8]];
+  for(const [px,pz,pw,pd] of patches){
+    const w = new THREE.Mesh(GEO.plane, MAT.water);
+    w.rotation.x = -Math.PI/2;
+    w.scale.set(pw,pd,1);
+    w.position.set(px,0.04,pz);
+    w.receiveShadow = true;
+    scene.add(w);
+  }
+}
+function makeSky(){
+  const c=document.createElement('canvas'); c.width=16; c.height=256;
+  const ctx=c.getContext('2d');
+  const grd=ctx.createLinearGradient(0,0,0,256);
+  grd.addColorStop(0,'#6f93b8'); grd.addColorStop(0.5,'#a8c0cf');
+  grd.addColorStop(0.82,'#cdd8d2'); grd.addColorStop(1,'#d8ddd4');
+  ctx.fillStyle=grd; ctx.fillRect(0,0,16,256);
+  const t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding;
+  const sky=new THREE.Mesh(new THREE.SphereGeometry(440,32,16),
+    new THREE.MeshBasicMaterial({map:t, side:THREE.BackSide, fog:false, depthWrite:false}));
+  scene.add(sky);
+}
+
+function makeCottage(x,z,rot,roofMat,owned){
+  const g = new THREE.Group();
+  g.add(box(MAT.wall, 0,1.4,0, 4.2,2.8,3.6));         // body
+  const roof = cone(roofMat||MAT.roof, 0,3.5,0, 3.4,1.8);
+  g.add(roof);
+  g.add(box(MAT.darkwood, 0,0.9,1.85, 0.9,1.8,0.2));  // door
+  g.add(box(MAT.window, -1.2,1.6,1.83, 0.7,0.7,0.1)); // window L
+  g.add(box(MAT.window, 1.2,1.6,1.83, 0.7,0.7,0.1));  // window R
+  g.add(box(MAT.stone, 1.5,3.4,0, 0.5,1.6,0.5));      // chimney
+  g.position.set(x,0,z);
+  g.rotation.y = rot;
+  scene.add(g);
+  obstacle(x,z,3.0);
+  return g;
+}
+
+function makeTree(x,z,dead){
+  const g = new THREE.Group();
+  g.add(cyl(MAT.wood, 0,1.2,0, 0.35,2.4));
+  if(dead){
+    g.add(cyl(MAT.darkwood, 0.4,2.6,0.2, 0.12,1.4));
+    g.add(cyl(MAT.darkwood, -0.3,2.8,-0.2, 0.1,1.2));
+  }else{
+    g.add(sph(MAT.leaf, 0,3.2,0, 1.7));
+    g.add(sph(MAT.leaf, 0.8,2.8,0.4, 1.0));
+    g.add(sph(MAT.leaf, -0.7,2.9,-0.3, 1.0));
+  }
+  g.position.set(x,0,z);
+  scene.add(g);
+  obstacle(x,z,0.7);
+  return g;
+}
+
+function makeLamp(x,z){
+  const g = new THREE.Group();
+  g.add(cyl(MAT.darkwood, 0,1.5,0, 0.12,3.0));
+  g.add(sph(MAT.glow, 0,3.1,0, 0.35));
+  const light = new THREE.PointLight(0xffcf7a, 0.9, 16, 2);
+  light.position.set(0,3.1,0);
+  g.add(light);
+  g.position.set(x,0,z);
+  scene.add(g);
+  WORLD.lamps.push(light);
+  obstacle(x,z,0.4);
+  return g;
+}
+
+function makeWell(x,z){
+  const g = new THREE.Group();
+  g.add(cyl(MAT.stone, 0,0.5,0, 1.1,1.0));
+  g.add(cyl(MAT.water, 0,0.85,0, 0.9,0.1));
+  g.add(box(MAT.wood, -1,2.0,0, 0.18,2.0,0.18));
+  g.add(box(MAT.wood, 1,2.0,0, 0.18,2.0,0.18));
+  g.add(cone(MAT.roof2, 0,3.0,0, 1.3,1.0));
+  g.position.set(x,0,z);
+  scene.add(g);
+  obstacle(x,z,1.3);
+  return g;
+}
+
+function makeFence(x,z,len,rot){
+  const g = new THREE.Group();
+  for(let i=0;i<len;i++){
+    g.add(box(MAT.wood, i*1.2-(len*1.2)/2,0.6,0, 0.12,1.2,0.12));
+  }
+  g.add(box(MAT.wood, 0,0.9,0, len*1.2,0.12,0.1));
+  g.position.set(x,0,z); g.rotation.y=rot;
+  scene.add(g);
+}
+
+function makeBeacon(){
+  const g = new THREE.Group();
+  // tapering stone tower (stacked cylinders)
+  g.add(cyl(MAT.stone, 0,3,0, 3.0,6));
+  g.add(cyl(MAT.stone, 0,8.5,0, 2.4,5));
+  g.add(cyl(MAT.stone, 0,12.5,0, 1.9,3));
+  // lamp room
+  g.add(cyl(MAT.darkwood, 0,14.6,0, 2.1,1.2));
+  const orb = sph(MAT.glow, 0,15.4,0, 1.4);
+  g.add(orb);
+  g.add(cone(MAT.roof2, 0,16.8,0, 2.2,1.6));
+  const light = new THREE.PointLight(0xffe2a0, 2.2, 70, 2);
+  light.position.set(0,15.4,0);
+  g.add(light);
+  WORLD.beaconLight = light;
+  WORLD.beaconOrb = orb;
+  g.position.set(0,0,138);
+  scene.add(g);
+  obstacle(0,138,3.2);
+  return g;
+}
+
+function makeMistGate(){
+  // translucent wall across the road, removed once quests allow.
+  const g = new THREE.Group();
+  for(let i=0;i<5;i++){
+    const m = new THREE.Mesh(GEO.plane, MAT.mist);
+    m.scale.set(12,9,1);
+    m.position.set(0,4.5,0);
+    m.material = MAT.mist;
+    g.add(m);
+  }
+  g.position.set(0,0,30);
+  scene.add(g);
+  WORLD.gate = g;
+  obstacle(0,30,5.5);
+  return g;
+}
+
+function buildWorld(){
+  makeGround();
+
+  // ---- Carrowgate village (around z 0..18) ----
+  makeWell(0,6);
+  makeLamp(-7,2); makeLamp(7,2); makeLamp(-7,14); makeLamp(7,14);
+  WORLD.cottage = makeCottage(-14,4,Math.PI/2.4, MAT.roof, S.ownsCottage);
+  makeCottage(14,4,-Math.PI/2.4, MAT.roof2);
+  makeCottage(-15,16,Math.PI/3, MAT.roof2);
+  makeCottage(15,15,-Math.PI/3, MAT.roof);
+  makeCottage(-2,20,Math.PI, MAT.roof2);   // Wenna's forge-house
+  makeFence(-22,10,6,0); makeFence(22,10,6,0);
+  makeTree(-20,-2); makeTree(20,-3); makeTree(-22,20); makeTree(22,19);
+  makeTree(-10,-8); makeTree(11,-8);
+
+  // ---- The Old Road (z 20..78) ----
+  for(let z=24; z<78; z+=11){
+    makeTree(-7+rand(-2,2), z+rand(-3,3));
+    makeTree(7+rand(-2,2), z+rand(-3,3));
+  }
+  makeLamp(-6,40); makeLamp(6,58);
+
+  // ---- The Drownfen (z 80..124) ----
+  for(let i=0;i<14;i++){
+    makeTree(rand(-22,22), rand(82,124), true);
+  }
+
+  // ---- The Beacon (z ~138) ----
+  makeBeacon();
+
+  // ---- Mist gate blocks the road until awakened ----
+  makeMistGate();
+  if(S.flags.gateOpen){ openGate(true); }
+
+  // invisible world bounds as obstacles handled in movement clamp.
+}
+
+function openGate(instant){
+  RT.gateOpen = true;
+  S.flags.gateOpen = true;
+  // remove gate obstacle
+  WORLD.obstacles = WORLD.obstacles.filter(o=>!(Math.abs(o.x)<0.1 && Math.abs(o.z-30)<0.1 && o.r>5));
+  if(WORLD.gate){
+    if(instant){ scene.remove(WORLD.gate); WORLD.gate=null; return; }
+    // fade out then remove
+    let t=0;
+    const fade=()=>{
+      t+=0.03;
+      MAT.mist.opacity = clamp(0.55*(1-t),0,0.55);
+      if(t<1 && WORLD.gate){ requestAnimationFrame(fade); }
+      else if(WORLD.gate){ scene.remove(WORLD.gate); WORLD.gate=null; MAT.mist.opacity=0.55; }
+    };
+    fade();
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   8. PLAYER (Wren) — body + morality-driven appearance + weapons
+--------------------------------------------------------------------------- */
+const PLAYER = { group:null, angle:0, vx:0, vz:0, mats:{}, swing:null, halo:null, horns:null, sword:null, bow:null, glow:null };
+
+function buildPlayer(){
+  const H = makeHuman({ skin:0xd8a982, shirt:0x6a4a2e, pants:0x49405a, hair:0x35261a, shoe:0x2a2018 });
+  const g = H.group;
+  // expose the tinted materials (used by updateHeroAppearance)
+  PLAYER.mats.body  = H.shirt;
+  PLAYER.mats.cloak = H.pants;
+  PLAYER.mats.head  = H.skin;
+  PLAYER.mats.limb  = H.hair;
+  PLAYER.armL=H.armL; PLAYER.armR=H.armR; PLAYER.legL=H.legL; PLAYER.legR=H.legR;
+
+  // halo (good) — emissive gold ring above head
+  const haloMat = new THREE.MeshBasicMaterial({color:0xffe08a});
+  const halo = new THREE.Mesh(GEO.torus, haloMat);
+  halo.position.set(0,2.22,0); halo.rotation.x=Math.PI/2; halo.scale.set(1.5,1.5,1.5);
+  halo.visible=false; halo.castShadow=false; g.add(halo); PLAYER.halo=halo;
+
+  // horns (evil)
+  const hornMat = new THREE.MeshStandardMaterial({color:0x241010, emissive:0x3a0000, emissiveIntensity:0.5, roughness:0.5});
+  const horns = new THREE.Group();
+  const hL = cone(hornMat, -0.07,1.96,0.02, 0.05,0.26); hL.rotation.z=0.5; hL.castShadow=false;
+  const hR = cone(hornMat,  0.07,1.96,0.02, 0.05,0.26); hR.rotation.z=-0.5; hR.castShadow=false;
+  horns.add(hL); horns.add(hR); horns.visible=false; g.add(horns); PLAYER.horns=horns;
+
+  // soft personal glow (good)
+  const glow = new THREE.PointLight(0xffe6b0, 0, 8, 2);
+  glow.position.set(0,1.4,0); g.add(glow); PLAYER.glow=glow;
+
+  // sword — held in the right hand
+  const sword = new THREE.Group();
+  const blade = box(new THREE.MeshStandardMaterial({color:0xd2d6de, metalness:0.6, roughness:0.32}), 0,0,0.46, 0.035,0.09,0.92);
+  const guard = box(new THREE.MeshStandardMaterial({color:0xb8a05a, metalness:0.5, roughness:0.5}), 0,0,0.02, 0.26,0.06,0.08);
+  const grip  = box(MAT.darkwood, 0,0,-0.13, 0.05,0.05,0.22);
+  sword.add(blade); sword.add(guard); sword.add(grip);
+  sword.rotation.x = 0.35;
+  H.handR.add(sword); PLAYER.sword=sword;
+
+  // bow — held in the right hand (hidden until equipped)
+  const bow = new THREE.Group();
+  const bowMat = new THREE.MeshStandardMaterial({color:0x6a3a1a, roughness:0.7});
+  bow.add(box(bowMat, 0,0.30,0.04, 0.045,0.62,0.045));
+  bow.add(box(bowMat, 0,-0.30,0.04, 0.045,0.62,0.045));
+  bow.add(box(bowMat, 0,0,0.02, 0.04,0.28,0.04));
+  bow.visible=false; H.handR.add(bow); PLAYER.bow=bow;
+
+  g.position.set(0,0,-2);
+  scene.add(g);
+  PLAYER.group=g; PLAYER.angle=0;
+  updateHeroAppearance();
+  updateWeaponVisual();
+}
+
+const _cA = new THREE.Color(), _cB = new THREE.Color();
+function tintTowards(mat, neutralHex, edgeHex, t){
+  _cA.setHex(neutralHex); _cB.setHex(edgeHex);
+  mat.color.copy(_cA).lerp(_cB, t);
+}
+function updateHeroAppearance(){
+  const m = S.morality;
+  const good = m>0 ? m/100 : 0;
+  const evil = m<0 ? -m/100 : 0;
+  // body / cloak / skin tint
+  if(m>=0){
+    tintTowards(PLAYER.mats.body, 0x6a4a2e, 0xe9e0bc, good);
+    tintTowards(PLAYER.mats.cloak,0x5a4a6a, 0xf0e6c0, good);
+    tintTowards(PLAYER.mats.head, 0xc8a07a, 0xe0c098, good*0.7);
+  }else{
+    tintTowards(PLAYER.mats.body, 0x6a4a2e, 0x431414, evil);
+    tintTowards(PLAYER.mats.cloak,0x5a4a6a, 0x2a0e0e, evil);
+    tintTowards(PLAYER.mats.head, 0xc8a07a, 0xb8aea4, evil*0.6);
+  }
+  PLAYER.halo.visible = m>=33;
+  PLAYER.horns.visible = m<=-33;
+  if(PLAYER.glow) PLAYER.glow.intensity = m>=33 ? 0.4 + (good-0.33)*0.9 : 0;
+  // update HUD label
+  const lbl = $('moralLabel');
+  if(lbl){
+    let t = 'Untested';
+    if(m>=66) t='Radiant'; else if(m>=33) t='Good'; else if(m>=10) t='Decent';
+    else if(m<=-66) t='Corrupt'; else if(m<=-33) t='Cruel'; else if(m<=-10) t='Selfish';
+    else t='Neutral';
+    lbl.textContent = t;
+  }
+  const mark = $('moralMark');
+  if(mark) mark.style.left = (50 + m/2) + '%';
+}
+
+function updateWeaponVisual(){
+  if(!PLAYER.sword) return;
+  PLAYER.sword.visible = S.weapon==='sword';
+  PLAYER.bow.visible = S.weapon==='bow';
+  const lbl = $('swapLbl');
+  if(lbl) lbl.textContent = S.weapon==='sword' ? 'Bow' : 'Sword';
+}
+
+function addMorality(delta){
+  S.morality = clamp(S.morality + delta, -100, 100);
+  updateHeroAppearance();
+}
+
+/* ---------------------------------------------------------------------------
+   9. DOG COMPANION (Pip)
+--------------------------------------------------------------------------- */
+const DOG = { group:null, barkT:0, lungeT:0, x:0, z:0 };
+function buildDog(){
+  const g = new THREE.Group();
+  const fur = new THREE.MeshStandardMaterial({color:0x9a6a3a, roughness:0.85});
+  const fur2= new THREE.MeshStandardMaterial({color:0x664322, roughness:0.85});
+  const dark= new THREE.MeshStandardMaterial({color:0x241208, roughness:0.6});
+  const mk=(geo,mat,x,y,z,rx,rz)=>{ const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; m.castShadow=true; m.receiveShadow=true; g.add(m); return m; };
+  mk(new THREE.CylinderGeometry(0.24,0.21,0.78,14), fur, 0,0.5,0, Math.PI/2);   // barrel body
+  mk(new THREE.SphereGeometry(0.24,14,12), fur, 0,0.5,0.36);                    // chest
+  mk(new THREE.SphereGeometry(0.21,14,12), fur, 0,0.52,-0.4);                   // haunch
+  mk(new THREE.SphereGeometry(0.2,14,12),  fur, 0,0.66,0.54);                   // head
+  mk(new THREE.CylinderGeometry(0.09,0.12,0.22,12), fur2, 0,0.6,0.72, Math.PI/2);// snout
+  mk(new THREE.SphereGeometry(0.05,8,8), dark, 0,0.6,0.84);                     // nose
+  const eL=mk(new THREE.ConeGeometry(0.07,0.18,8), fur2, -0.11,0.82,0.5); eL.rotation.x=-0.3;
+  const eR=mk(new THREE.ConeGeometry(0.07,0.18,8), fur2,  0.11,0.82,0.5); eR.rotation.x=-0.3;
+  mk(new THREE.SphereGeometry(0.03,8,8), dark, -0.08,0.7,0.66);
+  mk(new THREE.SphereGeometry(0.03,8,8), dark,  0.08,0.7,0.66);
+  const legGeo=new THREE.CylinderGeometry(0.06,0.05,0.42,10);
+  mk(legGeo,fur2,-0.15,0.21,0.26); mk(legGeo,fur2,0.15,0.21,0.26);
+  mk(legGeo,fur2,-0.15,0.21,-0.28); mk(legGeo,fur2,0.15,0.21,-0.28);
+  const tail = mk(new THREE.CylinderGeometry(0.05,0.03,0.36,8), fur, 0,0.64,-0.56, -0.7);
+  DOG.tail = tail;
+  g.position.set(2,0,-2.5);
+  g.visible = false;       // joins after quest 2
+  scene.add(g);
+  DOG.group = g;
+}
+function dogJoins(){
+  if(!DOG.group) return;
+  DOG.group.visible = true;
+  S.flags.hasDog = true;
+}
+
+/* ---------------------------------------------------------------------------
+   10. TREASURE (Pip sniffs these out)
+--------------------------------------------------------------------------- */
+const TREASURES = [
+  { id:'t_square', x:9, z:18, gold:35, hint:'near the old fencepost' },
+  { id:'t_road',   x:-6, z:50, gold:55, hint:'beside the lonely lamp' },
+  { id:'t_fen',    x:14, z:100, gold:90, hint:'on the dry hummock' },
+];
+function treasureAvailable(){
+  if(!S.flags.hasDog) return null;
+  for(const t of TREASURES){
+    if(S.treasures[t.id]) continue;
+    if(dist2D(PLAYER.group.position.x,PLAYER.group.position.z, t.x,t.z) < 4.2) return t;
+  }
+  return null;
+}
+
+/* ---------------------------------------------------------------------------
+   11. NPCs
+--------------------------------------------------------------------------- */
+const NPCS = [
+  { id:'maren',  name:'Maren Ashglass', x:-4,  z:9,    robe:0x46566a, skin:0xd8c0a8, root:'maren_root', staff:true },
+  { id:'briar',  name:'Briar',          x:-11, z:9,    robe:0x7a4a4a, skin:0xd8b090, root:'briar_root' },
+  { id:'wenna',  name:'Wenna Ironbrow', x:-4,  z:16.5, robe:0x4a4038, skin:0xc89878, root:'wenna_root', burly:true },
+  { id:'roark',  name:'Roark Vell',     x:9,   z:9,    robe:0x3a3a4a, skin:0xc8a888, root:'roark_root' },
+  { id:'beggar', name:'A Ragged Soul',  x:5,   z:3,    robe:0x55503f, skin:0xb89878, root:'beggar_root' },
+];
+
+function buildVillager(d){
+  const darker=(hex)=>{ const c=new THREE.Color(hex); c.multiplyScalar(0.6); return c.getHex(); };
+  const H=makeHuman({ skin:d.skin, shirt:d.robe, pants:darker(d.robe), hair:0x2a1d12, shoe:0x241a12 });
+  const g=H.group;
+  if(d.burly){ g.scale.set(1.18,1.04,1.18); }
+  if(d.staff){
+    const st=cyl(MAT.darkwood, 0.30,1.05,0.16, 0.035,2.0); g.add(st);
+    const orb=sph(MAT.soul, 0.30,2.08,0.16, 0.11); orb.castShadow=false; g.add(orb);
+  }
+  if(d.burly){ // a smith's hammer resting at the hip
+    const hm=new THREE.Group(); hm.position.set(0.34,1.0,0.18);
+    hm.add(box(MAT.darkwood, 0,0,0, 0.06,0.06,0.5));
+    hm.add(box(MAT.stone,   0,0,0.28, 0.18,0.18,0.16));
+    g.add(hm);
+  }
+  // floating quest spark
+  const spark = sph(new THREE.MeshBasicMaterial({color:0xffe08a, transparent:true, opacity:0.9}), 0,2.18,0, 0.1);
+  spark.castShadow=false; g.add(spark); d.spark = spark;
+  g.position.set(d.x,0,d.z);
+  scene.add(g);
+  d.mesh = g;
+  WORLD.npcMeshes.push(d);
+}
+function buildNPCs(){ NPCS.forEach(buildVillager); }
+
+function npcById(id){ return NPCS.find(n=>n.id===id); }
+
+// which NPC should glow brightest right now (story guidance)
+function currentQuestNpc(){
+  if(S.questStage===0) return 'maren';
+  if(S.questStage===2 && !S.flags.metBriar) return 'briar';
+  return null;
+}
+
+/* ---------------------------------------------------------------------------
+   12. MODAL HELPERS (shop / codex)
+--------------------------------------------------------------------------- */
+function openModal(html){
+  const m = $('modal');
+  m.innerHTML = '<div class="panel">'+html+'</div>';
+  m.classList.remove('hidden');
+  RT.paused = true;
+  const c = m.querySelector('.close');
+  if(c) c.onclick = closeModal;
+}
+function closeModal(){
+  $('modal').classList.add('hidden');
+  $('modal').innerHTML='';
+  RT.paused = false;
+}
+
+/* ---------------------------------------------------------------------------
+   13. DIALOGUE ENGINE
+--------------------------------------------------------------------------- */
+let DLG_NODE=null, DLG_PAGE=0;
+function openDialogue(id){
+  const node = DIALOGUE[id];
+  if(!node) return;
+  RT.inDialogue = true;
+  RT.weaveOpen = false; $('weaveWheel').classList.remove('open');
+  $('dialogue').classList.remove('hidden');
+  $('prompt').classList.add('hidden');
+  DLG_NODE = node; DLG_PAGE = 0;
+  if(node.onEnter) node.onEnter();
+  renderDialogue();
+}
+function renderDialogue(){
+  const node = DLG_NODE;
+  const sp = $('dlgSpeaker');
+  const isNarr = node.speaker==='narrator';
+  sp.textContent = isNarr ? 'The Tale' : node.speaker;
+  sp.className = isNarr ? 'narr' : '';
+  const pages = Array.isArray(node.text) ? node.text : [node.text];
+  $('dlgText').textContent = pages[DLG_PAGE];
+  const choicesEl = $('dlgChoices');
+  const nextEl = $('dlgNext');
+  choicesEl.innerHTML=''; nextEl.classList.add('hidden');
+
+  const lastPage = DLG_PAGE >= pages.length-1;
+  if(!lastPage){
+    nextEl.textContent = 'Continue ▸';
+    nextEl.classList.remove('hidden');
+    nextEl.onclick = ()=>{ DLG_PAGE++; renderDialogue(); };
+    return;
+  }
+  // last page: show choices, or a continue/close
+  const choices = (node.choices||[]).filter(c=>!c.show || c.show());
+  if(choices.length){
+    choices.forEach(c=>{
+      const enabled = !c.need || c.need();
+      const btn = document.createElement('div');
+      btn.className='choice'+(enabled?'':' disabled');
+      let tag='';
+      if(c.tag) tag = '<span class="tag '+c.tag+'">'+(c.tag==='good'?'Kind':c.tag==='evil'?'Cruel':'Cost')+'</span>';
+      btn.innerHTML = tag + '<span>'+c.label+'</span>';
+      if(enabled){
+        btn.onclick = ()=>{
+          if(c.action) c.action();
+          if(c.next) openDialogue(c.next);
+          else closeDialogue();
+        };
+      }else{
+        btn.style.opacity='0.45';
+      }
+      choicesEl.appendChild(btn);
+    });
+  }else{
+    nextEl.textContent = node.next ? 'Continue ▸' : 'Farewell ▸';
+    nextEl.classList.remove('hidden');
+    nextEl.onclick = ()=>{ if(node.next) openDialogue(node.next); else closeDialogue(); };
+  }
+}
+function closeDialogue(){
+  RT.inDialogue=false;
+  $('dialogue').classList.add('hidden');
+  DLG_NODE=null;
+  saveGame();
+}
+
+/* ---------------------------------------------------------------------------
+   14. ECONOMY HELPERS
+--------------------------------------------------------------------------- */
+function canAfford(n){ return S.gold>=n; }
+function spend(n){ S.gold=Math.max(0,S.gold-n); updateHUD(); saveGame(); }
+function addGold(n){ S.gold+=n; updateHUD(); }
+function heal(n){ S.hp=clamp(S.hp+n,0,S.maxHp); updateHUD(); }
+function restoreMp(n){ S.mp=clamp(S.mp+n,0,S.maxMp); updateHUD(); }
+
+/* ---------------------------------------------------------------------------
+   15. DIALOGUE + QUEST CONTENT
+--------------------------------------------------------------------------- */
+const DIALOGUE = {
+
+  /* ---- MAREN (guide / Weave tutor) ---- */
+  maren_root:{
+    speaker:'Maren Ashglass',
+    text: [
+      "Sit. Mind the coals. I am blind to faces, child, but I read the embers, and the embers have been reading you.",
+      "A foundling of Carrowgate, born in a year the sea took more than ships. And lately the sea has grown... hungry. Folk wander into the Drownfen and do not wander out.",
+      "Severin Mourne raises his great Beacon on the headland — to 'call his family home,' he says. But every light has its moths, and his is calling the drowned.",
+    ],
+    choices:[
+      { label:"Why are you telling me this?", next:'maren_why' },
+      { label:"What can I possibly do?", next:'maren_do' },
+    ]
+  },
+  maren_why:{ speaker:'Maren Ashglass',
+    text:"Because the coals show me a hand on that Beacon's light. Yours. Whether you snuff it or seize it — that part smokes and will not settle. The choosing is yours to make.",
+    next:'maren_teach' },
+  maren_do:{ speaker:'Maren Ashglass',
+    text:"You can learn the Weave — the old craft of pulling threads from the world's hem. Fire, force, stillness. Give me your hand.",
+    next:'maren_teach' },
+  maren_teach:{ speaker:'Maren Ashglass',
+    text:[
+      "There. Feel the thread catch? That is Ember. There will be Shove and Stillness besides, once your spirit deepens.",
+      "Now — before heroics, a kindness. A dog cowers by the well, and a drowned thing has it cornered. Even foundlings should know: how you treat the small is how you treat the world.",
+    ],
+    onEnter:function(){ if(!S.weaveUnlocked){ teachWeave(); } },
+    choices:[ { label:"I'll see to the dog.", action:function(){ startDogQuest(); }, next:null } ]
+  },
+  maren_again:{ speaker:'Maren Ashglass',
+    text:"The embers still point north, child. To the Beacon. Arm yourself, speak with the village, then take the road when the mist consents to part.",
+    choices:[ { label:"Thank you, Maren.", next:null } ] },
+
+  /* ---- BRIAR (sister / property / main-quest push) ---- */
+  briar_root:{
+    speaker:'Briar',
+    text:[
+      "Wren! Thank every saint. I heard you were poking about Maren's coals again. You always did chase ghost stories — and now the ghost stories chase us back.",
+      "Three from our row are gone into the fen this month. I keep Mother's old cottage swept and waiting, but I cannot keep it forever. The deed should be yours.",
+    ],
+    choices:[
+      { label:"Tell me about Severin and the Beacon.", next:'briar_beacon' },
+      { label:"The cottage — what would you ask for it?", next:'briar_cottage' },
+      { label:"I'm going to the headland to end this.", action:function(){ briarBlessing(); }, next:'briar_north' },
+    ]
+  },
+  briar_beacon:{ speaker:'Briar',
+    text:"Severin was a lightkeeper, before. Good man, dull as a wet sermon. Then his wife and boys went down with the ferry off the headland. He hasn't slept since. He says the Beacon will 'guide them home.' Wren — the only thing coming home is wrong.",
+    next:'briar_root' },
+  briar_cottage:{ speaker:'Briar',
+    text:[
+      "A hundred and fifty gold, and not a copper of profit in it — it needs the roof seen to and smells of the last tenant. But it's draughty, it's ours, and it's a roof.",
+    ],
+    choices:[
+      { label:"Here's 150 gold. (Buy the cottage)", tag:'gold', need:function(){return canAfford(150) && !S.ownsCottage;}, action:function(){ buyCottage(); }, next:'briar_bought' },
+      { label:"Already mine, sister.", show:function(){return S.ownsCottage;}, next:null },
+      { label:"Not yet. I'm light on coin.", next:null },
+    ]
+  },
+  briar_bought:{ speaker:'Briar',
+    text:"Then it's done. Welcome home, Wren. Rest by the hearth whenever you've need — the door's always yours now. Try not to die out there; I've only just got you a roof.",
+    next:null },
+  briar_north:{ speaker:'Briar',
+    text:"Then I won't talk you out of it — I never could. Take the road north past the square. The mist on it parts for those the headland is waiting for. It seems it's waiting for you. ...Come back, you hear?",
+    choices:[ { label:"I'll come back.", next:null } ] },
+
+  /* ---- WENNA (smith / trainer / shop) ---- */
+  wenna_root:{
+    speaker:'Wenna Ironbrow',
+    text:[
+      "You've the look of someone about to do something stupid and heroic. Good. Stupid-and-heroic keeps my forge lit.",
+      "I ran from the fighting-pits to swing a hammer instead of a fist. I can sell you a bow, and I can drill the softness out of you — for coin.",
+    ],
+    choices:[
+      { label:"Show me what you've got. (Train & Smith)", action:function(){ openShop('wenna'); }, next:null },
+      { label:"Tell me about the pits.", next:'wenna_pits' },
+    ]
+  },
+  wenna_pits:{ speaker:'Wenna Ironbrow',
+    text:"Gallowtide breeds two things: smugglers and pit-fighters. I was the second, fleeing the first. I broke a man's jaw and my own taste for it the same night. A hammer only breaks what you point it at. Mostly.",
+    next:'wenna_root' },
+
+  /* ---- ROARK (merchant / charming smuggler) ---- */
+  roark_root:{
+    speaker:'Roark Vell',
+    text:[
+      "Ah, a customer with the soft glow of disposable income. Roark Vell — purveyor of tonics, trinkets, and answers to questions you didn't know to ask.",
+      "Don't ask how I stay so young and handsome. Some bargains a man keeps to himself.",
+    ],
+    choices:[
+      { label:"Let's see your wares. (Trade)", action:function(){ openShop('roark'); }, next:null },
+      { label:"What do you know about the Beacon?", next:'roark_beacon' },
+    ]
+  },
+  roark_beacon:{ speaker:'Roark Vell',
+    text:"Severin's lighthouse of lost causes? I smuggled lamp-oil up that headland for a year, then stopped. Bad for business when your customers turn translucent. Take a tonic or three before you go knocking. On the house — no, of course not on the house, I'm not a charity.",
+    next:'roark_root' },
+
+  /* ---- BEGGAR (moral fork) ---- */
+  beggar_root:{
+    speaker:'A Ragged Soul',
+    text:"Spare a coin, hero? I've not eaten since the fen took my brother. Twenty gold and I'd weep your name to the saints.",
+    choices:[
+      { label:"Here — take twenty.", tag:'good', need:function(){return canAfford(20);}, action:function(){ beggarGive(); }, next:'beggar_thanks' },
+      { label:"What little you have — give it here.", tag:'evil', action:function(){ beggarRob(); }, next:'beggar_robbed' },
+      { label:"Not today.", next:null },
+    ]
+  },
+  beggar_thanks:{ speaker:'A Ragged Soul',
+    text:"Bless you, bless you. Listen — my brother buried something on the dry hummock out in the Drownfen, before it took him. Let your dog sniff it out. It's yours now. Kindness should pay, just this once.",
+    next:null },
+  beggar_robbed:{ speaker:'A Ragged Soul',
+    text:"...Take it, then. Take it. They said a hero would come to Carrowgate. I'll tell them what came instead.",
+    next:null },
+  beggar_empty:{ speaker:'A Ragged Soul',
+    text:"You've nothing left I want, and I've nothing left to give. Go on.",
+    choices:[ { label:"Leave.", next:null } ] },
+
+  /* ---- SEVERIN — finale (set up in combat chunk) ---- */
+  severin_meet:{
+    speaker:'Severin Mourne',
+    text:[
+      "Careful on the stair, little moth. The light is delicate, and it has waited so long.",
+      "You smell of Carrowgate — of warm bread and small, living griefs. I had those once. A wife. Two boys. The headland took them on a calm grey morning, and the sea did not even have the decency to rage.",
+      "So I built them a light to follow home. And they ARE coming home. Can't you feel them in the mist? All I need is more light. A little more. I'll take it from the living if I must.",
+    ],
+    choices:[
+      { label:"Severin — the drowned you're calling are not your family.", tag:'good', action:function(){ addMorality(8); }, next:'severin_fight_in' },
+      { label:"Then I'll take the Beacon, and the power in it.", tag:'evil', action:function(){ addMorality(-8); }, next:'severin_fight_in' },
+      { label:"Step away from the light, keeper.", next:'severin_fight_in' },
+    ]
+  },
+  severin_fight_in:{ speaker:'Severin Mourne',
+    text:"No. NO. You will not take them from me a second time!",
+    choices:[ { label:"(Draw your weapon)", action:function(){ beginBossFight(); }, next:null } ] },
+
+  /* finale choice after boss defeat */
+  finale_choice:{
+    speaker:'Severin Mourne',
+    text:[
+      "Enough... enough. I can't hold it. The light — it's slipping —",
+      "It's yours now, moth. The Beacon answers whoever stands at its heart. Snuff it, and the drowned go dark and quiet. Keep it lit for yourself, and its hunger becomes your hunger. Or... leave me my light. Leave me my hope, even false.",
+    ],
+    choices:[
+      { label:"Extinguish the Beacon. Let them rest.", tag:'good', action:function(){ endGame('good'); }, next:null },
+      { label:"Seize the Beacon. Its light is mine now.", tag:'evil', action:function(){ endGame('evil'); }, next:null },
+      { label:"Leave him his light, and walk away.", action:function(){ endGame('neutral'); }, next:null },
+    ]
+  },
+};
+
+/* ---------------------------------------------------------------------------
+   16. QUEST ACTIONS
+--------------------------------------------------------------------------- */
+function teachWeave(){
+  S.weaveUnlocked = true;
+  narrate("You learned the Weave. Ember, Shove, and Stillness now answer your hand — at the cost of spirit (the blue thread).");
+  unlockLore('weave');
+}
+function startDogQuest(){
+  closeDialogue();
+  if(S.flags.dogRescued || S.flags.dogQuest) return;
+  S.flags.dogQuest = true;
+  S.questStage = Math.max(S.questStage,1);
+  setObjective("Save the cornered dog by the well.");
+  // place the wild dog at the well, and a drowned thing menacing it
+  if(DOG.group){ DOG.group.position.set(2.6,0,7); DOG.group.visible = true; }
+  spawnEnemy(4.0, 7.5, {tag:'dogThreat'});
+  narrate("By the well, a small brown dog presses itself flat. Something drowned and dripping looms over it. Best hurry.");
+}
+function onDogRescued(){
+  if(S.flags.dogRescued) return;
+  S.flags.dogRescued = true;
+  S.flags.dogQuest = false;
+  dogJoins();
+  S.questStage = 2;
+  setObjective("Speak with Carrowgate: your sister Briar, the smith Wenna, the trader Roark.");
+  narrate("And so you acquired a dog. Studies show a dog improves a hero's treasure income, combat odds, and general likeability by a frankly suspicious margin. Its name, you decide, is Pip. Try not to get it killed.");
+  unlockLore('pip');
+}
+function briarBlessing(){
+  S.flags.metBriar = true;
+  if(S.questStage<3) S.questStage = 2;
+  unlockLore('severin');
+  setObjective("Arm yourself, then take the road north to the Beacon.");
+}
+function buyCottage(){
+  spend(150);
+  S.ownsCottage = true;
+  narrate("Congratulations on the property ladder's first rung. It's draughty, it smells faintly of the previous owner, and it is entirely, gloriously yours. Rest at its door to mend; coin will trickle in while you adventure.");
+  unlockLore('cottage');
+}
+function beggarGive(){
+  spend(20); addMorality(12);
+  S.flags.gaveBeggar = true;
+  narrate("How decent of you. Somewhere, a bard is already composing a tedious ballad about it.");
+}
+function beggarRob(){
+  addGold(15); addMorality(-15);
+  S.flags.robbedBeggar = true;
+  narrate("A bold choice. The beggar will remember this. So will the town. So, frankly, will I.");
+}
+
+/* ---------------------------------------------------------------------------
+   17. SHOPS
+--------------------------------------------------------------------------- */
+function lvlCost(base, step, lvl){ return base + step*lvl; }
+function shopRow(title, desc, cost, ok, onBuy, soldOut){
+  const id='buy_'+Math.random().toString(36).slice(2,8);
+  setTimeout(()=>{ const b=$(id); if(b && ok && !soldOut) b.onclick=()=>{ onBuy(); }; },0);
+  const label = soldOut ? 'Owned' : (cost+'g');
+  const cls = (ok && !soldOut) ? 'buy' : 'buy disabled';
+  return '<div class="shopItem"><div class="info"><b>'+title+'</b><small>'+desc+'</small></div>'+
+         '<button class="'+cls+'" id="'+id+'">'+label+'</button></div>';
+}
+function openShop(type){
+  let html='';
+  if(type==='roark'){
+    html += '<h2>Roark\'s Wares</h2><div class="psub">"Everything is reasonably priced, by which I mean priced to my advantage."</div>';
+    html += '<div class="psub" style="color:var(--gold-bright)">Purse: '+S.gold+'g · Tonics: '+S.potions+'</div>';
+    html += shopRow('Healing Tonic','Restores 45 vigour. Drink with the tonic button or Q.',25, canAfford(25), ()=>{ if(canAfford(25)){spend(25); S.potions++; openShop('roark'); narrate("A tonic clinks into your satchel.");} });
+    html += shopRow('Smuggler\'s Charm','Weave threads pull cheaper. Spell costs −25%.',120, canAfford(120)&&!S.flags.charm, ()=>{ if(canAfford(120)){spend(120); S.flags.charm=true; S.spellCostMul=0.75; openShop('roark'); narrate("The charm hums. The Weave comes easier now.");} }, S.flags.charm);
+    html += shopRow('Vial of Spirit','Restores 30 spirit at once.',18, canAfford(18), ()=>{ if(canAfford(18)){spend(18); restoreMp(30); openShop('roark'); narrate("Cool spirit floods back into you.");} });
+  }else{ // wenna
+    html += '<h2>Ironbrow Forge</h2><div class="psub">"Pay the smith, leave the softness."</div>';
+    html += '<div class="psub" style="color:var(--gold-bright)">Purse: '+S.gold+'g</div>';
+    if(!S.weaponUnlocked.bow){
+      html += shopRow('Hunting Bow','Unlocks ranged attacks. Swap with the Bow button or K.',60, canAfford(60), ()=>{ if(canAfford(60)){spend(60); S.weaponUnlocked.bow=true; openShop('wenna'); narrate("A yew bow, well-balanced. Loose arrows with Strike while it's drawn.");} });
+    }
+    const vL=S.flags.vigorLvl||0, eL=S.flags.edgeLvl||0, fL=S.flags.focusLvl||0, aL=S.flags.aimLvl||0;
+    const vC=lvlCost(50,40,vL), eC=lvlCost(60,50,eL), fC=lvlCost(50,40,fL), aC=lvlCost(55,45,aL);
+    html += shopRow('Vigour Drill (+25 max vigour)','Lv '+vL+'. Toughens the body.',vC, canAfford(vC), ()=>{ if(canAfford(vC)){spend(vC); S.maxHp+=25; S.hp+=25; S.flags.vigorLvl=vL+1; updateHUD(); openShop('wenna');} });
+    html += shopRow('Edge Drill (+6 strike damage)','Lv '+eL+'. Sharper, meaner swings.',eC, canAfford(eC), ()=>{ if(canAfford(eC)){spend(eC); S.dmgBonus+=6; S.flags.edgeLvl=eL+1; openShop('wenna');} });
+    html += shopRow('Focus Drill (+20 max spirit)','Lv '+fL+'. Deepens the Weave well.',fC, canAfford(fC), ()=>{ if(canAfford(fC)){spend(fC); S.maxMp+=20; S.mp+=20; S.flags.focusLvl=fL+1; updateHUD(); openShop('wenna');} });
+    if(S.weaponUnlocked.bow){
+      html += shopRow('Aim Drill (+6 arrow damage)','Lv '+aL+'. Steadier hand at range.',aC, canAfford(aC), ()=>{ if(canAfford(aC)){spend(aC); S.bowBonus+=6; S.flags.aimLvl=aL+1; openShop('wenna');} });
+    }
+  }
+  html += '<div class="close">✕</div>';
+  openModal(html);
+}
+
+/* ---------------------------------------------------------------------------
+   18. CODEX
+--------------------------------------------------------------------------- */
+const CODEX_LORE = [
+  { id:'weave',   cat:'The Weave',  title:'Threads of the World', text:'An old craft of pulling power from the world\'s hem: Ember (fire), Shove (force), Stillness (slowing). It costs spirit — the blue thread — which mends with rest.' },
+  { id:'pip',     cat:'Companions', title:'Pip', text:'A brown dog of no particular pedigree and considerable loyalty. Sniffs out buried coin and harries the drowned. Worth more than most people in Carrowgate, and better company.' },
+  { id:'severin', cat:'The Beacon', title:'Severin Mourne', text:'Once the headland\'s lightkeeper. He lost his wife and two sons to the ferry-wreck off the point, and lost his reason soon after. His Beacon calls the drowned, mistaking them for the family it cannot raise.' },
+  { id:'cottage', cat:'Carrowgate', title:'The Family Cottage', text:'Draughty, modest, and yours. Rest at its door to mend body and spirit; a small rent trickles in while you adventure.' },
+  { id:'hollow',  cat:'The Drownfen',title:'Hollow Men', text:'The drowned, summoned half-back by the Beacon\'s light. Waterlogged, hollow-eyed, and hungry for the warmth of the living. Fire and force put them down; stillness buys you time.' },
+];
+function unlockLore(id){ S.flags['lore_'+id] = true; }
+function openCodex(){
+  let html = '<h2>The Codex</h2><div class="psub">What you have learned of Brackenholm.</div>';
+  // quest log
+  html += '<div class="codexCat">Your Tale</div>';
+  html += '<div class="codexItem"><div class="info"><b>'+stageTitle()+'</b><small>'+S.objective+'</small></div></div>';
+  // morality summary
+  html += '<div class="codexItem"><div class="info"><b>Reputation: '+($('moralLabel')?$('moralLabel').textContent:'—')+'</b><small>'+moralBlurb()+'</small></div></div>';
+  // lore
+  const cats={};
+  CODEX_LORE.forEach(l=>{ if(S.flags['lore_'+l.id]){ (cats[l.cat]=cats[l.cat]||[]).push(l); } });
+  const keys=Object.keys(cats);
+  if(keys.length===0){ html += '<div class="codexCat">Lore</div><div class="codexItem"><div class="info"><small>You have learned nothing worth recording. Yet.</small></div></div>'; }
+  keys.forEach(c=>{
+    html += '<div class="codexCat">'+c+'</div>';
+    cats[c].forEach(l=>{ html += '<div class="codexItem"><div class="info"><b>'+l.title+'</b><small>'+l.text+'</small></div></div>'; });
+  });
+  html += '<div class="close">✕</div>';
+  openModal(html);
+}
+function stageTitle(){
+  switch(S.questStage){
+    case 0: return 'I. The Ember-Reader';
+    case 1: return 'II. A Dog by the Well';
+    case 2: return 'III. The Folk of Carrowgate';
+    case 3: return 'IV. The Road North';
+    default: return 'V. The Lightkeeper\'s Beacon';
+  }
+}
+function moralBlurb(){
+  const m=S.morality;
+  if(m>=33) return 'Carrowgate speaks your name with something like hope. A halo rides your brow.';
+  if(m<=-33) return 'The village bolts its doors when your shadow falls. Horns have answered your cruelty.';
+  return 'You are, as yet, an unfinished thing — neither saint nor monster.';
+}
+
+/* ---------------------------------------------------------------------------
+   19. FX (rings, flashes, souls) — pooled-light, materials disposed on death
+--------------------------------------------------------------------------- */
+const FXS = [];
+function spawnRing(x,z,color,maxScale){
+  const mat = new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:0.8, side:THREE.DoubleSide});
+  const m = new THREE.Mesh(GEO.torus, mat);
+  m.position.set(x,0.4,z); m.rotation.x=Math.PI/2; m.scale.set(1,1,1);
+  scene.add(m);
+  FXS.push({mesh:m, mat, t:0, life:0.45, kind:'ring', max:maxScale||7});
+}
+function spawnFlash(x,y,z,color,size){
+  const mat = new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:0.9});
+  const m = new THREE.Mesh(GEO.sphere, mat);
+  m.position.set(x,y,z); m.scale.set(size,size,size);
+  scene.add(m);
+  FXS.push({mesh:m, mat, t:0, life:0.35, kind:'flash', max:size*2.2});
+}
+function spawnSoul(x,z){
+  const mat = new THREE.MeshBasicMaterial({color:0x9ce0d8, transparent:true, opacity:0.95});
+  const m = new THREE.Mesh(GEO.sphere, mat);
+  m.position.set(x,1.2,z); m.scale.set(0.5,0.5,0.5);
+  scene.add(m);
+  FXS.push({mesh:m, mat, t:0, life:1.1, kind:'soul'});
+}
+function updateFX(dt){
+  for(let i=FXS.length-1;i>=0;i--){
+    const f=FXS[i]; f.t+=dt; const p=f.t/f.life;
+    if(f.kind==='ring'){ const s=1+(f.max-1)*p; f.mesh.scale.set(s,s,s); f.mat.opacity=0.8*(1-p); }
+    else if(f.kind==='flash'){ const s=f.mesh.scale.x; const ns=lerp(s,f.max,0.3); f.mesh.scale.set(ns,ns,ns); f.mat.opacity=0.9*(1-p); }
+    else if(f.kind==='soul'){ f.mesh.position.y += dt*1.6; f.mat.opacity=0.95*(1-p); }
+    if(f.t>=f.life){ scene.remove(f.mesh); f.mat.dispose(); FXS.splice(i,1); }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   20. ENEMIES — Hollow Men
+--------------------------------------------------------------------------- */
+/* projectile materials are created in buildAssets() (after the engine check) */
+
+const ENEMIES = [];
+const PROJ = [];
+
+function buildHollow(scale){
+  const g = new THREE.Group();
+  const b = MAT.hollowBody;
+  const ghost=(geo,x,y,z,sx,sy,sz)=>{ const m=new THREE.Mesh(geo,b); m.position.set(x,y,z); if(sx!==undefined)m.scale.set(sx,sy,sz); m.castShadow=false; m.receiveShadow=false; g.add(m); return m; };
+  // wispy spirit tail (no legs)
+  const tail=ghost(PART.tail, 0,0.55,0); tail.rotation.x=Math.PI;
+  ghost(PART.torso, 0,1.18,0);                        // torso
+  // limp, reaching arms
+  const aL=ghost(PART.upperArm,-0.22,1.25,0.05); aL.rotation.set(0.5,0,0.3);
+  const aR=ghost(PART.upperArm, 0.22,1.25,0.05); aR.rotation.set(0.5,0,-0.3);
+  const fL=ghost(PART.foreArm,-0.30,1.0,0.22); fL.rotation.set(1.0,0,0.2);
+  const fR=ghost(PART.foreArm, 0.30,1.0,0.22); fR.rotation.set(1.0,0,-0.2);
+  const head=ghost(PART.head, 0,1.6,0, 1,1.15,1);     // head
+  // glowing soul-eyes
+  const eL=new THREE.Mesh(PART.eye, MAT.soul); eL.position.set(-0.05,1.62,0.12); eL.scale.set(1.5,1.5,1.5); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye, MAT.soul); eR.position.set( 0.05,1.62,0.12); eR.scale.set(1.5,1.5,1.5); g.add(eR);
+  g.scale.setScalar(scale||1);
+  return g;
+}
+function spawnEnemy(x,z,opts){
+  opts=opts||{};
+  if(ENEMIES.length>9) return;
+  const tier = opts.tier||1;
+  const g = buildHollow(tier===2?1.12:1.0);
+  g.position.set(x,0,z);
+  scene.add(g);
+  const e = {
+    group:g, x:x, z:z, baseY:0,
+    hp: tier===2?70:48, maxHp: tier===2?70:48,
+    speed: tier===2?3.4:3.1, dmg: tier===2?11:8,
+    atkCd:0, hitFlash:0, slowT:0, slowMul:1, bob:Math.random()*6,
+    tag: opts.tag||'', dead:false, gold: tier===2?randInt(10,18):randInt(5,11),
+  };
+  ENEMIES.push(e);
+  return e;
+}
+function damageEnemy(e, dmg, kx, kz){
+  if(e.dead) return;
+  e.hp -= dmg; e.hitFlash=0.12;
+  if(kx!==undefined){ e.x += kx; e.z += kz; }
+  if(e.hp<=0) dieEnemy(e);
+}
+function dieEnemy(e){
+  e.dead=true;
+  spawnSoul(e.x,e.z);
+  scene.remove(e.group);
+  addGold(e.gold);
+  const idx=ENEMIES.indexOf(e); if(idx>=0) ENEMIES.splice(idx,1);
+  if(e.tag==='dogThreat'){ onDogRescued(); }
+  if(e.tag==='bossMinion' && RT.boss){ /* nothing special */ }
+}
+function updateEnemies(dt){
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  for(let i=ENEMIES.length-1;i>=0;i--){
+    const e=ENEMIES[i]; if(e.dead) continue;
+    e.bob+=dt*3; e.baseY=Math.sin(e.bob)*0.08+0.05;
+    if(e.slowT>0){ e.slowT-=dt; if(e.slowT<=0) e.slowMul=1; }
+    if(e.atkCd>0) e.atkCd-=dt;
+    if(e.hitFlash>0){ e.hitFlash-=dt; e.group.scale.setScalar((e.group.children?1:1)); }
+    const d=dist2D(e.x,e.z,px,pz);
+    const aggro = e.tag==='dogThreat' ? 30 : 16;
+    if(d<aggro){
+      // chase
+      const dx=(px-e.x)/d, dz=(pz-e.z)/d;
+      if(d>1.9){
+        const sp=e.speed*e.slowMul*dt;
+        e.x+=dx*sp; e.z+=dz*sp;
+      }
+      e.group.rotation.y = Math.atan2(dx,dz);
+      if(d<2.2 && e.atkCd<=0){
+        e.atkCd=1.2;
+        damagePlayer(e.dmg);
+        spawnFlash(px,1.2,pz,0x4aa0a0,0.4);
+      }
+    }
+    // tint flash on hit
+    e.group.children.forEach(ch=>{ if(ch.material===MAT.hollow){} });
+    e.group.position.set(e.x, e.baseY, e.z);
+    // clamp to world
+    e.x=clamp(e.x,CFG.WORLD_MIN_X+2,CFG.WORLD_MAX_X-2);
+    e.z=clamp(e.z,CFG.WORLD_MIN_Z+2,CFG.WORLD_MAX_Z-2);
+  }
+}
+function clearMinions(){
+  for(let i=ENEMIES.length-1;i>=0;i--){ scene.remove(ENEMIES[i].group); }
+  ENEMIES.length=0;
+}
+
+// keep the road & fen populated as the player advances
+function maintainSpawns(dt){
+  if(RT.boss || !RT.gateOpen || S.questStage<2) return;
+  RT.spawnTimer = (RT.spawnTimer||0) - dt;
+  if(RT.spawnTimer>0) return;
+  const pz=PLAYER.group.position.z;
+  if(pz<26 || pz>132) return; // only on road/fen
+  const living = ENEMIES.filter(e=>e.tag!=='dogThreat').length;
+  const inFen = pz>80;
+  const target = inFen?4:3;
+  if(living>=target){ RT.spawnTimer=1.5; return; }
+  // spawn ahead of the player, off the road centre
+  const sx = clamp(PLAYER.group.position.x + rand(-16,16), CFG.WORLD_MIN_X+3, CFG.WORLD_MAX_X-3);
+  const sz = clamp(pz + rand(8,22), 28, 130);
+  if(dist2D(sx,sz,PLAYER.group.position.x,pz)>11){
+    spawnEnemy(sx,sz,{tier:inFen?2:1});
+  }
+  RT.spawnTimer = inFen?1.6:2.0;
+  if(S.questStage<3){ S.questStage=3; setObjective("Cross the road and the Drownfen to reach the Beacon."); }
+}
+
+/* ---------------------------------------------------------------------------
+   21. PROJECTILES
+--------------------------------------------------------------------------- */
+function fireArrow(){
+  const a = PLAYER.angle;
+  const dx=Math.sin(a), dz=Math.cos(a);
+  const m=new THREE.Mesh(GEO.box, MAT.arrow);
+  m.position.set(PLAYER.group.position.x+dx*0.8, 1.2, PLAYER.group.position.z+dz*0.8);
+  m.scale.set(0.08,0.08,0.9);
+  m.rotation.y=a;
+  scene.add(m);
+  PROJ.push({mesh:m, vx:dx*34, vz:dz*34, life:1.6, dmg:CFG.BOW_DMG+S.bowBonus, kind:'arrow', boss:false});
+}
+function spawnEmberProj(){
+  const a=PLAYER.angle, dx=Math.sin(a), dz=Math.cos(a);
+  const m=new THREE.Mesh(GEO.sphere, MAT.ember);
+  m.position.set(PLAYER.group.position.x+dx, 1.3, PLAYER.group.position.z+dz);
+  m.scale.set(0.55,0.55,0.55);
+  scene.add(m);
+  PROJ.push({mesh:m, vx:dx*22, vz:dz*22, life:1.1, dmg:32+S.weaveBonus, kind:'ember', boss:false});
+}
+function spawnGriefBolt(tx,tz){
+  const bx=RT.boss.x, bz=RT.boss.z;
+  const d=dist2D(bx,bz,tx,tz)||1;
+  const dx=(tx-bx)/d, dz=(tz-bz)/d;
+  const m=new THREE.Mesh(GEO.sphere, MAT.grief);
+  m.position.set(bx+dx*1.5, 2.0, bz+dz*1.5);
+  m.scale.set(0.7,0.7,0.7);
+  scene.add(m);
+  PROJ.push({mesh:m, vx:dx*15, vz:dz*15, life:2.2, dmg:14, kind:'grief', boss:true});
+}
+function emberExplode(x,z){
+  spawnFlash(x,1.0,z,0xffb050,1.4);
+  spawnRing(x,z,0xffa040,5);
+  for(const e of ENEMIES){ if(!e.dead && dist2D(e.x,e.z,x,z)<3.5) damageEnemy(e, 30+S.weaveBonus); }
+  if(RT.boss && dist2D(RT.boss.x,RT.boss.z,x,z)<4) damageBoss(30+S.weaveBonus);
+}
+function updateProjectiles(dt){
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  for(let i=PROJ.length-1;i>=0;i--){
+    const p=PROJ[i];
+    p.mesh.position.x += p.vx*dt;
+    p.mesh.position.z += p.vz*dt;
+    p.life-=dt;
+    let hit=false;
+    const x=p.mesh.position.x, z=p.mesh.position.z;
+    if(p.boss){
+      // damages player
+      if(dist2D(x,z,px,pz)<1.1){ damagePlayer(p.dmg); hit=true; }
+    }else{
+      for(const e of ENEMIES){
+        if(!e.dead && dist2D(x,z,e.x,e.z)<1.2){
+          if(p.kind==='ember'){ emberExplode(x,z); }
+          else damageEnemy(e,p.dmg, p.vx*0.02, p.vz*0.02);
+          hit=true; break;
+        }
+      }
+      if(!hit && RT.boss && dist2D(x,z,RT.boss.x,RT.boss.z)<1.6){
+        if(p.kind==='ember'){ emberExplode(x,z); } else damageBoss(p.dmg);
+        hit=true;
+      }
+      if(!hit && p.kind==='ember' && p.life<=0){ emberExplode(x,z); }
+    }
+    if(hit || p.life<=0){ scene.remove(p.mesh); PROJ.splice(i,1); }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   22. PLAYER ATTACKS + SPELLS
+--------------------------------------------------------------------------- */
+function playerAttack(){
+  if(RT.inDialogue || RT.paused) return;
+  if(S.weapon==='bow' && S.weaponUnlocked.bow){
+    if(RT.bowTimer>0) return;
+    RT.bowTimer=CFG.BOW_CD; fireArrow();
+  }else{
+    if(RT.attackTimer>0) return;
+    RT.attackTimer=CFG.ATTACK_CD; RT.swingT=0.22;
+    doMeleeHit();
+  }
+}
+function doMeleeHit(){
+  const a=PLAYER.angle, px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  const fx=Math.sin(a), fz=Math.cos(a);
+  let any=false;
+  for(const e of ENEMIES){
+    if(e.dead) continue;
+    const d=dist2D(e.x,e.z,px,pz);
+    if(d<CFG.MELEE_RANGE){
+      const tx=(e.x-px)/(d||1), tz=(e.z-pz)/(d||1);
+      if(tx*fx+tz*fz > 0.25){ damageEnemy(e, CFG.MELEE_DMG+S.dmgBonus, fx*0.4, fz*0.4); any=true; }
+    }
+  }
+  if(RT.boss){
+    const d=dist2D(RT.boss.x,RT.boss.z,px,pz);
+    if(d<CFG.MELEE_RANGE+0.8){
+      const tx=(RT.boss.x-px)/(d||1), tz=(RT.boss.z-pz)/(d||1);
+      if(tx*fx+tz*fz>0.1){ damageBoss(CFG.MELEE_DMG+S.dmgBonus); any=true; }
+    }
+  }
+  if(any) spawnFlash(px+fx*1.8,1.3,pz+fz*1.8,0xffffff,0.5);
+}
+function castSpell(name){
+  if(RT.inDialogue||RT.paused) return;
+  if(!S.weaveUnlocked){ narrate("You haven't learned the Weave yet. Seek Maren Ashglass in the square."); return; }
+  if(RT.spellCd[name]>0) return;
+  const baseCost = name==='ember'?15 : name==='shove'?20 : 18;
+  const cost = Math.round(baseCost*S.spellCostMul);
+  if(S.mp<cost){ flashBar('mp'); return; }
+  S.mp-=cost; updateHUD();
+  RT.spellCd[name]=RT.spellCdMax[name];
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  if(name==='ember'){ spawnEmberProj(); }
+  else if(name==='shove'){
+    spawnRing(px,pz,0x9ad0ff,9);
+    for(const e of ENEMIES){ if(e.dead) continue; const d=dist2D(e.x,e.z,px,pz); if(d<5.5){ const dx=(e.x-px)/(d||1), dz=(e.z-pz)/(d||1); damageEnemy(e, 18+S.weaveBonus, dx*2.2, dz*2.2); } }
+    if(RT.boss && dist2D(RT.boss.x,RT.boss.z,px,pz)<5.5) damageBoss(16+S.weaveBonus);
+  }
+  else if(name==='still'){
+    spawnRing(px,pz,0xbfeaff,7);
+    for(const e of ENEMIES){ if(e.dead) continue; if(dist2D(e.x,e.z,px,pz)<6.5){ e.slowT=4; e.slowMul=0.3; } }
+  }
+  RT.weaveOpen=false; $('weaveWheel').classList.remove('open');
+}
+
+/* ---------------------------------------------------------------------------
+   23. PLAYER DAMAGE / DEATH
+--------------------------------------------------------------------------- */
+function damagePlayer(n){
+  if(RT.invuln>0) return;
+  S.hp=clamp(S.hp-n,0,S.maxHp); RT.lastHurt=0; updateHUD();
+  // red vignette pulse
+  const h=$('hurt'); h.style.boxShadow='inset 0 0 120px 30px rgba(180,30,30,'+clamp(n/40,0.2,0.7)+')';
+  setTimeout(()=>{ h.style.boxShadow='inset 0 0 120px 30px rgba(180,30,30,0)'; },130);
+  if(S.hp<=0) onDeath();
+}
+const DEATH_LINES=[
+  "And there you lay. It was, all things considered, a perfectly avoidable death. Shall we pretend it didn't happen? Splendid.",
+  "Death came, took one look at your unfinished business, and sent you back with a sigh. Don't make a habit of it.",
+  "You expired with great drama and little dignity. The Tale, being kind, allows a do-over.",
+];
+function onDeath(){
+  RT.invuln=2.5;
+  narrate(DEATH_LINES[randInt(0,DEATH_LINES.length-1)]);
+  const wasBoss = !!RT.boss;
+  if(wasBoss){
+    // reset the boss fight, respawn at fen edge
+    resetBoss();
+    PLAYER.group.position.set(0,0,120);
+    S.hp=S.maxHp; S.mp=S.maxMp;
+  }else{
+    const loss=Math.floor(S.gold*0.1);
+    if(loss>0){ S.gold-=loss; narrate("You came to lighter by "+loss+" gold. The fen keeps what it catches."); }
+    const home = S.ownsCottage ? {x:-14,z:8} : {x:0,z:2};
+    PLAYER.group.position.set(home.x,0,home.z);
+    clearMinions();
+    S.hp=Math.round(S.maxHp*0.6); S.mp=S.maxMp;
+  }
+  updateHUD(); saveGame();
+}
+
+/* ---------------------------------------------------------------------------
+   24. BOSS — Severin Mourne, the Lightkeeper
+--------------------------------------------------------------------------- */
+function buildSeverin(){
+  const H = makeHuman({ skin:0xb9c2c0, shirt:0x223038, pants:0x1c262c, hair:0x223036, shoe:0x14202a });
+  const g = H.group;
+  const coatMat = new THREE.MeshStandardMaterial({color:0x26323c, roughness:0.8, emissive:0x0a1a22, emissiveIntensity:0.35});
+  // long keeper's coat skirting the legs
+  const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.5,1.25,16), coatMat);
+  coat.position.set(0,0.62,0); coat.castShadow=true; coat.receiveShadow=true; g.add(coat);
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.30,0.2,16), coatMat); collar.position.set(0,1.5,0); g.add(collar);
+  // keeper's cap
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.18,0.12,16), coatMat); cap.position.set(0,1.97,0); g.add(cap);
+  const brim= new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.03,16), coatMat); brim.position.set(0,1.91,0.02); g.add(brim);
+  // hollow, glowing eyes
+  const eL=new THREE.Mesh(PART.eye, MAT.soul); eL.position.set(-0.052,1.81,0.118); eL.scale.set(1.6,1.6,1.6); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye, MAT.soul); eR.position.set( 0.052,1.81,0.118); eR.scale.set(1.6,1.6,1.6); g.add(eR);
+  // lantern of cold light in the left hand
+  const lant=new THREE.Mesh(new THREE.SphereGeometry(0.17,14,12), new THREE.MeshBasicMaterial({color:0xffe2a0}));
+  lant.position.set(-0.34,1.0,0.2); g.add(lant);
+  const ll=new THREE.PointLight(0xffe2a0,1.6,24,2); ll.position.set(-0.34,1.0,0.2); g.add(ll);
+  g.scale.setScalar(1.5);
+  return g;
+}
+function startBoss(){
+  if(RT.bossSpawned) return;
+  RT.bossSpawned=true;
+  S.questStage=5; setObjective("Confront Severin Mourne at the Beacon.");
+  narrate("The headland. The Beacon roars with cold light, and a tall figure turns at the top of the stair.");
+  unlockLore('hollow'); unlockLore('severin');
+  openDialogue('severin_meet');
+}
+function beginBossFight(){
+  closeDialogue();
+  RT.bossMet=true;
+  clearMinions();
+  const g=buildSeverin();
+  g.position.set(0,0,132);
+  scene.add(g);
+  RT.boss = {
+    group:g, x:0, z:132, baseY:0, bob:0,
+    hp:420, maxHp:420, atkCd:2.0, slamCd:1.5,
+    summonA:false, summonB:false, hitFlash:0, slowT:0, slowMul:1,
+  };
+  showBossBar('Severin Mourne, the Lightkeeper');
+  narrate("Severin Mourne raises his lantern like a weapon. The drowned stir at his call.");
+}
+function damageBoss(n){
+  if(!RT.boss) return;
+  RT.boss.hp-=n; RT.boss.hitFlash=0.1;
+  spawnFlash(RT.boss.x, 2.4, RT.boss.z, 0xff6a6a, 0.5);
+  if(RT.boss.hp<=0) bossDefeated();
+}
+function updateBoss(dt){
+  const b=RT.boss; if(!b) return;
+  b.bob+=dt*2.2; b.baseY=Math.sin(b.bob)*0.12;
+  if(b.slowT>0){ b.slowT-=dt; if(b.slowT<=0) b.slowMul=1; }
+  if(b.atkCd>0) b.atkCd-=dt;
+  if(b.slamCd>0) b.slamCd-=dt;
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  const d=dist2D(b.x,b.z,px,pz)||1;
+  const dx=(px-b.x)/d, dz=(pz-b.z)/d;
+  b.group.rotation.y=Math.atan2(dx,dz);
+  if(d>4){ const sp=3.6*b.slowMul*dt; b.x+=dx*sp; b.z+=dz*sp; }
+  // melee slam
+  if(d<4 && b.slamCd<=0){
+    b.slamCd=2.4; spawnRing(b.x,b.z,0x88c0ff,7);
+    if(d<5) damagePlayer(16);
+  }
+  // grief bolt
+  if(b.atkCd<=0 && d>3){ b.atkCd=2.6; spawnGriefBolt(px,pz); }
+  // summons
+  if(!b.summonA && b.hp<b.maxHp*0.66){ b.summonA=true; for(let i=0;i<2;i++) spawnEnemy(b.x+rand(-4,4), b.z+rand(-2,4), {tier:2,tag:'bossMinion'}); narrate("Severin tears two more souls from the mist."); }
+  if(!b.summonB && b.hp<b.maxHp*0.33){ b.summonB=true; for(let i=0;i<3;i++) spawnEnemy(b.x+rand(-5,5), b.z+rand(-2,5), {tier:2,tag:'bossMinion'}); narrate("\"You will not take them!\" The Beacon flares; the drowned rise."); }
+  b.group.position.set(b.x,b.baseY,b.z);
+  b.x=clamp(b.x,-22,22); b.z=clamp(b.z,124,148);
+  const fill=$('bossFill'); if(fill) fill.style.width=clamp(b.hp/b.maxHp*100,0,100)+'%';
+}
+function bossDefeated(){
+  const b=RT.boss; RT.boss=null; RT.bossDefeated=true;
+  clearMinions(); hideBossBar();
+  if(b){ spawnFlash(b.x,2.0,b.z,0xffe2a0,2); scene.remove(b.group); }
+  if(WORLD.beaconLight) WORLD.beaconLight.intensity=0.9;
+  narrate("Severin sinks to his knees beneath the wavering light. It is yours to decide now.");
+  saveGame();
+  setTimeout(()=>openDialogue('finale_choice'), 700);
+}
+function resetBoss(){
+  if(RT.boss){ scene.remove(RT.boss.group); RT.boss=null; }
+  clearMinions(); hideBossBar();
+}
+function showBossBar(name){ $('bossName').textContent=name; $('bossWrap').classList.remove('hidden'); }
+function hideBossBar(){ $('bossWrap').classList.add('hidden'); }
+
+/* ---------------------------------------------------------------------------
+   25. UI — HUD updates
+--------------------------------------------------------------------------- */
+function updateHUD(){
+  $('hpFill').style.width = clamp(S.hp/S.maxHp*100,0,100)+'%';
+  $('mpFill').style.width = clamp(S.mp/S.maxMp*100,0,100)+'%';
+  $('hpText').textContent = Math.ceil(S.hp)+' / '+S.maxHp;
+  $('mpText').textContent = Math.ceil(S.mp)+' / '+S.maxMp;
+  $('goldVal').textContent = S.gold;
+  $('potionVal').textContent = S.potions;
+  const mark=$('moralMark'); if(mark) mark.style.left=(50+S.morality/2)+'%';
+}
+let _flashT={hp:0,mp:0};
+function flashBar(which){
+  const el = which==='hp'?$('hpFill'):$('mpFill');
+  el.style.filter='brightness(2)';
+  setTimeout(()=>{ el.style.filter='none'; },140);
+}
+
+/* ---------------------------------------------------------------------------
+   26. INTERACTIONS (talk / dig / rest)
+--------------------------------------------------------------------------- */
+function npcDialogueRoot(id){
+  if(id==='maren') return S.weaveUnlocked ? 'maren_again' : 'maren_root';
+  if(id==='beggar') return (S.flags.gaveBeggar||S.flags.robbedBeggar) ? 'beggar_empty' : 'beggar_root';
+  return npcById(id).root;
+}
+function updateInteractions(){
+  RT.interact=null;
+  if(RT.inDialogue||RT.paused||!PLAYER.group) { $('prompt').classList.add('hidden'); return; }
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  // dig (highest priority)
+  const t=treasureAvailable();
+  if(t){ RT.interact={type:'dig', data:t, text:'Dig — Pip found something!'}; }
+  else{
+    // nearest npc (and gently turn nearby folk to face you)
+    let best=null, bd=3.4;
+    for(const n of NPCS){
+      const d=dist2D(px,pz,n.x,n.z);
+      if(n.mesh && d<7){ const ty=Math.atan2(px-n.x,pz-n.z); let dy=ty-n.mesh.rotation.y; while(dy>Math.PI)dy-=2*Math.PI; while(dy<-Math.PI)dy+=2*Math.PI; n.mesh.rotation.y+=dy*0.12; }
+      if(d<bd){ bd=d; best=n; }
+    }
+    if(best){
+      const trade = (best.id==='roark'||best.id==='wenna');
+      RT.interact={type:'npc', data:best, text:(trade?'Trade with ':'Speak with ')+best.name};
+    } else if(S.ownsCottage && dist2D(px,pz,-14,7)<3.2){
+      RT.interact={type:'rest', text:'Rest at the cottage'};
+    }
+  }
+  const p=$('prompt');
+  if(RT.interact){ $('promptText').textContent=RT.interact.text; p.classList.remove('hidden'); }
+  else p.classList.add('hidden');
+}
+function tryInteract(){
+  if(RT.inDialogue){ return; }
+  if(!RT.interact) return;
+  if(RT.interact.type==='dig') digTreasure(RT.interact.data);
+  else if(RT.interact.type==='npc') openDialogue(npcDialogueRoot(RT.interact.data.id));
+  else if(RT.interact.type==='rest') restAtCottage();
+}
+function digTreasure(t){
+  if(S.treasures[t.id]) return;
+  S.treasures[t.id]=true;
+  addGold(t.gold); S.dogBond=Math.min(100,S.dogBond+10);
+  spawnFlash(t.x,0.6,t.z,0xffe08a,1);
+  narrate("Pip digs furiously, tail a blur, and unearths a muddy purse — "+t.gold+" gold. Good dog. The best dog.");
+  saveGame();
+}
+function restAtCottage(){
+  S.hp=S.maxHp; S.mp=S.maxMp; updateHUD();
+  narrate("You doze by your own hearth. The roof still leaks, the world still teeters — but you wake whole.");
+  saveGame();
+}
+function usePotion(){
+  if(S.potions<=0){ narrate("No tonics left. Roark would be delighted to sell you more."); return; }
+  if(S.hp>=S.maxHp){ narrate("You're already hale. Save it."); return; }
+  S.potions--; heal(45); narrate("You drain a tonic. Warmth spreads; the edges of the world sharpen."); saveGame();
+}
+function swapWeapon(){
+  if(!S.weaponUnlocked.bow){ narrate("You've no bow yet. Wenna Ironbrow keeps one at her forge."); return; }
+  S.weapon = S.weapon==='sword' ? 'bow' : 'sword';
+  updateWeaponVisual(); saveGame();
+}
+function doDodge(){
+  if(RT.dodgeCdTimer>0 || RT.inDialogue || RT.paused) return;
+  RT.dodgeTimer=CFG.DODGE_TIME; RT.dodgeCdTimer=CFG.DODGE_CD;
+  RT.invuln=Math.max(RT.invuln,0.3);
+}
+
+/* ---------------------------------------------------------------------------
+   27. INPUT — keyboard
+--------------------------------------------------------------------------- */
+const KEYS={};
+function onKeyDown(e){
+  const k=e.key.toLowerCase();
+  KEYS[k]=true;
+  if(k==='escape'){ if(!$('modal').classList.contains('hidden')) closeModal(); return; }
+  if(RT.inDialogue||RT.paused) return;
+  if(e.repeat) return;
+  if(k==='j') playerAttack();
+  else if(k==='k') swapWeapon();
+  else if(k==='1') castSpell('ember');
+  else if(k==='2') castSpell('shove');
+  else if(k==='3') castSpell('still');
+  else if(k===' ') { e.preventDefault(); doDodge(); }
+  else if(k==='e') tryInteract();
+  else if(k==='q') usePotion();
+}
+function onKeyUp(e){ KEYS[e.key.toLowerCase()]=false; }
+
+function keyboardAxes(){
+  let f=0,s=0;
+  if(KEYS['w']||KEYS['arrowup']) f+=1;
+  if(KEYS['s']||KEYS['arrowdown']) f-=1;
+  if(KEYS['d']||KEYS['arrowright']) s+=1;
+  if(KEYS['a']||KEYS['arrowleft']) s-=1;
+  return {f,s};
+}
+
+/* ---------------------------------------------------------------------------
+   28. INPUT — touch joystick + action buttons
+--------------------------------------------------------------------------- */
+RT.joyF=0; RT.joyS=0;
+function setupTouch(){
+  const stick=$('stick'), nub=$('stickNub');
+  let sid=null, cx=0, cy=0, R=52;
+  function start(e){
+    const t=e.changedTouches?e.changedTouches[0]:e;
+    sid=t.identifier!==undefined?t.identifier:'mouse';
+    const r=stick.getBoundingClientRect();
+    cx=r.left+r.width/2; cy=r.top+r.height/2;
+    move(e); e.preventDefault();
+  }
+  function move(e){
+    let t=null;
+    if(e.changedTouches){ for(const c of e.changedTouches){ if(c.identifier===sid){ t=c; break; } } if(!t) return; }
+    else t=e;
+    let dx=t.clientX-cx, dy=t.clientY-cy;
+    const mag=Math.sqrt(dx*dx+dy*dy);
+    if(mag>R){ dx=dx/mag*R; dy=dy/mag*R; }
+    nub.style.left=(50+dx/130*100)+'%'; nub.style.top=(50+dy/130*100)+'%';
+    RT.joyS = dx/R;       // right = +
+    RT.joyF = -dy/R;      // up = forward = +
+    e.preventDefault();
+  }
+  function end(e){
+    if(e.changedTouches){ let found=false; for(const c of e.changedTouches){ if(c.identifier===sid) found=true; } if(!found) return; }
+    sid=null; RT.joyF=0; RT.joyS=0;
+    nub.style.left='50%'; nub.style.top='50%';
+  }
+  stick.addEventListener('touchstart',start,{passive:false});
+  stick.addEventListener('touchmove',move,{passive:false});
+  stick.addEventListener('touchend',end);
+  stick.addEventListener('touchcancel',end);
+  stick.addEventListener('mousedown',(e)=>{ start(e); const mm=(ev)=>move(ev), mu=()=>{ end({changedTouches:null}); window.removeEventListener('mousemove',mm); window.removeEventListener('mouseup',mu); }; window.addEventListener('mousemove',mm); window.addEventListener('mouseup',mu); });
+
+  // action buttons
+  const press=(id,fn)=>{ const el=$(id); const h=(e)=>{ e.preventDefault(); fn(); }; el.addEventListener('touchstart',h,{passive:false}); el.addEventListener('mousedown',h); };
+  press('bAttack', playerAttack);
+  press('bDodge', doDodge);
+  press('bInteract', tryInteract);
+  press('bSwap', swapWeapon);
+  press('bWeave', ()=>{ RT.weaveOpen=!RT.weaveOpen; $('weaveWheel').classList.toggle('open', RT.weaveOpen); });
+  document.querySelectorAll('#weaveWheel .spell').forEach(sp=>{
+    const h=(e)=>{ e.preventDefault(); castSpell(sp.getAttribute('data-spell')); };
+    sp.addEventListener('touchstart',h,{passive:false}); sp.addEventListener('mousedown',h);
+  });
+  // hud buttons
+  $('btnCodex').onclick=openCodex;
+  $('btnMenu').onclick=openMenu;
+  $('potionChip').onclick=usePotion;
+}
+
+/* ---------------------------------------------------------------------------
+   29. PAUSE MENU
+--------------------------------------------------------------------------- */
+function openMenu(){
+  const html='<h2>Pause</h2><div class="psub">Brackenholm holds its breath.</div>'+
+    '<div class="codexItem"><div class="info"><b>'+S.name+' of Carrowgate</b><small>'+stageTitle()+' · '+($('moralLabel')?$('moralLabel').textContent:'')+' · '+S.gold+'g</small></div></div>'+
+    '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">'+
+    '<button class="btn" id="mResume">Resume</button>'+
+    '<button class="btn ghost" id="mSave">Save</button>'+
+    '<button class="btn danger" id="mQuit">Save &amp; Quit to Title</button></div>'+
+    '<div class="close">✕</div>';
+  openModal(html);
+  $('mResume').onclick=closeModal;
+  $('mSave').onclick=()=>{ saveGame(); narrate("Your tale is recorded."); closeModal(); };
+  $('mQuit').onclick=()=>{ saveGame(); closeModal(); quitToTitle(); };
+}
+
+/* ---------------------------------------------------------------------------
+   30. MOVEMENT + CAMERA + ANIMATION
+--------------------------------------------------------------------------- */
+function blocked(x,z){
+  for(const o of WORLD.obstacles){ if(dist2D(x,z,o.x,o.z) < o.r+0.6) return true; }
+  return false;
+}
+let _walkT=0;
+function updateMovement(dt){
+  const ka=keyboardAxes();
+  let f=clamp(ka.f+RT.joyF,-1,1);
+  let s=clamp(ka.s+RT.joyS,-1,1);
+  const mag=Math.sqrt(f*f+s*s);
+  if(mag>1){ f/=mag; s/=mag; }
+  let moving = mag>0.08;
+  const dodging = RT.dodgeTimer>0;
+  let speed = dodging ? CFG.DODGE_SPEED : CFG.MOVE_SPEED;
+  let mx, mz;
+  if(dodging && !moving){ mx=Math.sin(PLAYER.angle); mz=Math.cos(PLAYER.angle); }
+  else { mx=-s; mz=f; }   // -s: the camera faces +Z, so screen-right is world -X
+  if(dodging) moving=true;
+  RT.moving = moving; RT.dodging = dodging;
+
+  const ox=PLAYER.group.position.x, oz=PLAYER.group.position.z;
+  let nx=ox+mx*speed*dt, nz=oz+mz*speed*dt;
+  // collision slide
+  if(blocked(nx,nz)){
+    if(!blocked(nx,oz)) nz=oz;
+    else if(!blocked(ox,nz)) nx=ox;
+    else { nx=ox; nz=oz; }
+  }
+  nx=clamp(nx,CFG.WORLD_MIN_X+1,CFG.WORLD_MAX_X-1);
+  nz=clamp(nz,CFG.WORLD_MIN_Z+1,CFG.WORLD_MAX_Z-1);
+
+  if(moving && (Math.abs(mx)>0.01||Math.abs(mz)>0.01)){
+    PLAYER.angle=Math.atan2(mx,mz);
+    _walkT+=dt*10;
+  }
+  PLAYER.group.position.x=nx; PLAYER.group.position.z=nz;
+  PLAYER.group.position.y = moving && !dodging ? Math.abs(Math.sin(_walkT))*0.06 : 0;
+  PLAYER.group.rotation.y=PLAYER.angle;
+}
+function updateCamera(dt){
+  if(!PLAYER.group) return;
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  const k=Math.min(1,dt*5);
+  camera.position.x=lerp(camera.position.x,px,k);
+  camera.position.y=lerp(camera.position.y,CFG.CAM_HEIGHT,k);
+  camera.position.z=lerp(camera.position.z,pz-CFG.CAM_DIST,k);
+  camera.lookAt(px,1.6,pz);
+  if(WORLD.sun){
+    WORLD.sun.position.set(px-16, 30, pz-8);
+    WORLD.sun.target.position.set(px, 0, pz+2);
+    WORLD.sun.target.updateMatrixWorld();
+  }
+}
+function updateSwing(dt){
+  if(!PLAYER.armR) return;
+  if(RT.swingT>0) RT.swingT=Math.max(0,RT.swingT-dt);
+  const moving = RT.moving && !RT.dodging;
+  const ph=_walkT, amp=0.5;
+  let lLeg = moving? Math.sin(ph)*amp : 0;
+  let rLeg = moving? -Math.sin(ph)*amp : 0;
+  let lArm = moving? -Math.sin(ph)*0.42 : 0;
+  let rArm = moving?  Math.sin(ph)*0.42 : 0;
+  if(RT.dodging){ lArm=rArm=-0.5; lLeg=0.45; rLeg=-0.45; }
+  if(RT.swingT>0){ const prog=clamp(RT.swingT/0.22,0,1); rArm = -1.7*Math.sin(prog*Math.PI) - 0.2; }
+  const k=0.35, ks=RT.swingT>0?0.6:0.32;
+  PLAYER.legL.rotation.x = lerp(PLAYER.legL.rotation.x, lLeg, k);
+  PLAYER.legR.rotation.x = lerp(PLAYER.legR.rotation.x, rLeg, k);
+  PLAYER.armL.rotation.x = lerp(PLAYER.armL.rotation.x, lArm, k);
+  PLAYER.armR.rotation.x = lerp(PLAYER.armR.rotation.x, rArm, ks);
+}
+function haloSpin(dt){
+  if(PLAYER.halo && PLAYER.halo.visible) PLAYER.halo.rotation.z+=dt*0.8;
+}
+
+/* ---------------------------------------------------------------------------
+   31. DOG follow + combat
+--------------------------------------------------------------------------- */
+function updateDog(dt){
+  if(!S.flags.hasDog || !DOG.group || !DOG.group.visible) return;
+  const a=PLAYER.angle;
+  const bx=PLAYER.group.position.x - Math.sin(a)*2.0;
+  const bz=PLAYER.group.position.z - Math.cos(a)*2.0;
+  const k=Math.min(1,dt*4.5);
+  DOG.group.position.x=lerp(DOG.group.position.x,bx,k);
+  DOG.group.position.z=lerp(DOG.group.position.z,bz,k);
+  const fx=PLAYER.group.position.x-DOG.group.position.x, fz=PLAYER.group.position.z-DOG.group.position.z;
+  if(Math.abs(fx)+Math.abs(fz)>0.05) DOG.group.rotation.y=Math.atan2(fx,fz);
+  DOG.group.position.y=Math.abs(Math.sin(performance.now()*0.008))*0.04;
+  if(DOG.tail) DOG.tail.rotation.z=Math.sin(performance.now()*0.02)*0.6;
+  DOG.atk=(DOG.atk||0)-dt;
+  if(DOG.atk<=0){
+    let near=null, nd=3.6;
+    for(const e of ENEMIES){ if(e.dead||e.tag==='dogThreat') continue; const d=dist2D(DOG.group.position.x,DOG.group.position.z,e.x,e.z); if(d<nd){ nd=d; near=e; } }
+    if(near){ damageEnemy(near,7); spawnFlash(near.x,0.9,near.z,0xffffff,0.3); DOG.atk=1.5; }
+    else DOG.atk=0.3;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   32. PER-FRAME CHECKS (gate / boss / regen / rent)
+--------------------------------------------------------------------------- */
+function updateTimers(dt){
+  RT.attackTimer=Math.max(0,RT.attackTimer-dt);
+  RT.bowTimer=Math.max(0,RT.bowTimer-dt);
+  RT.dodgeTimer=Math.max(0,RT.dodgeTimer-dt);
+  RT.dodgeCdTimer=Math.max(0,RT.dodgeCdTimer-dt);
+  RT.invuln=Math.max(0,RT.invuln-dt);
+  for(const k in RT.spellCd) RT.spellCd[k]=Math.max(0,RT.spellCd[k]-dt);
+}
+function regen(dt){
+  RT.lastHurt+=dt;
+  if(S.mp<S.maxMp) S.mp=Math.min(S.maxMp,S.mp+6*dt);
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  const danger = RT.boss || ENEMIES.some(e=>!e.dead && dist2D(e.x,e.z,px,pz)<14);
+  if(RT.lastHurt>4 && !danger && S.hp<S.maxHp) S.hp=Math.min(S.maxHp,S.hp+4*dt);
+}
+function gateCheck(dt){
+  RT.gateMsgT=(RT.gateMsgT||0)-dt;
+  if(RT.gateOpen) return;
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  if(pz>22 && pz<37 && Math.abs(px)<8){
+    if(S.weaveUnlocked && S.flags.metBriar){
+      openGate();
+      narrate("The mist on the road shudders and parts, as if the headland has been waiting for you. It has.");
+    }else if(RT.gateMsgT<=0){
+      RT.gateMsgT=7;
+      narrate("A wall of cold mist bars the road north. It won't part until you've learned the Weave and spoken with your sister Briar.");
+    }
+  }
+}
+function bossTrigger(){
+  if(RT.boss||RT.bossDefeated) return;
+  const pz=PLAYER.group.position.z;
+  if(RT.bossMet){ if(pz>122) beginBossFight(); return; }
+  if(!RT.bossSpawned && pz>126) startBoss();
+}
+function rentTick(dt){
+  if(!S.ownsCottage) return;
+  RT.rentTimer=(RT.rentTimer||0)+dt;
+  if(RT.rentTimer>=5){ RT.rentTimer=0; S.gold+=1; }
+}
+
+/* ---------------------------------------------------------------------------
+   33. MAIN LOOP
+--------------------------------------------------------------------------- */
+let _hudT=0;
+function update(dt){
+  const active = !RT.paused && !RT.inDialogue;
+  if(active){
+    updateTimers(dt);
+    updateMovement(dt);
+    updateDog(dt);
+    updateEnemies(dt);
+    updateBoss(dt);
+    updateProjectiles(dt);
+    maintainSpawns(dt);
+    updateInteractions();
+    regen(dt);
+    gateCheck(dt);
+    bossTrigger();
+    rentTick(dt);
+  }else{
+    $('prompt').classList.add('hidden');
+  }
+  updateFX(dt);
+  updateSwing(dt);
+  haloSpin(dt);
+  updateCamera(dt);
+  _hudT-=dt; if(_hudT<=0){ updateHUD(); _hudT=0.1; }
+}
+function loop(){
+  requestAnimationFrame(loop);
+  const dt=clock?Math.min(clock.getDelta(),0.05):0.016;
+  if(RT.started) update(dt);
+  if(renderer) renderer.render(scene,camera);
+}
+function startLoop(){ if(RT.loopRunning) return; RT.loopRunning=true; loop(); }
+
+/* ---------------------------------------------------------------------------
+   34. ENDINGS
+--------------------------------------------------------------------------- */
+function haloLine(){
+  const m=S.morality;
+  if(m>=33) return "They will remember you with a halo.";
+  if(m<=-33) return "They will remember you with horns.";
+  return "They will remember you as someone who could have been either.";
+}
+const ENDINGS={
+  good:{ title:"The Light Goes Out", text:"You let the Beacon die. The Hollow Men exhaled, all at once — a sigh five years held — and were gone into a quiet that felt, at last, like rest. Severin wept, and this time the weeping had an end to it. Carrowgate slept soundly that night. So did you, eventually, once the cheering stopped." },
+  evil:{ title:"The Light Is Mine", text:"You took the Beacon for your own. Its cold light bent to you, hungry and bright, and the drowned turned their hollow eyes from Severin to a new keeper — a worse master. The town learned a fresh word for what you'd become. Severin, broken, almost envied you the certainty. You rather liked the word." },
+  neutral:{ title:"The Keeper's Hope", text:"You left Severin his light and walked back down the headland into the grey morning. Behind you the Beacon went on calling, the fen went on answering, and Carrowgate went on bolting its doors. Some mercies are only cruelties in a kinder coat. But it was his hope — and you let him keep it. The Tale will not tell you whether that was right." },
+};
+function endGame(kind){
+  closeDialogue();
+  RT.paused=true;
+  S.flags.ending=kind; RT.bossDefeated=true;
+  if(kind==='good'){ if(WORLD.beaconLight) WORLD.beaconLight.intensity=0; if(WORLD.beaconOrb) WORLD.beaconOrb.material=MAT.stone; }
+  else if(kind==='evil'){ if(WORLD.beaconLight){ WORLD.beaconLight.color.setHex(0xff5a3a); WORLD.beaconLight.intensity=2.8; } }
+  saveGame();
+  // dramatic fade then ending card
+  $('fade').style.opacity='1';
+  setTimeout(()=>{
+    const e=ENDINGS[kind]||ENDINGS.neutral;
+    $('endTitle').textContent=e.title;
+    $('endText').textContent=e.text+'  '+haloLine();
+    const found=Object.keys(S.treasures).length;
+    $('endStats').textContent='Reputation: '+($('moralLabel')?$('moralLabel').textContent:'—')+'  ·  Gold: '+S.gold+'  ·  Treasures unearthed: '+found+'/3'+(S.ownsCottage?'  ·  Cottage owned':'');
+    $('hud').classList.add('hidden'); $('controls').classList.add('hidden'); $('dialogue').classList.add('hidden');
+    $('ending').classList.remove('hidden');
+    $('fade').style.opacity='0';
+  },900);
+}
+
+/* ---------------------------------------------------------------------------
+   35. FLOW: title / new / continue / quit
+--------------------------------------------------------------------------- */
+function intro(){
+  narrate("Brackenholm. A land of green hills, charming villages, and an alarming number of people who'd happily stab you for a copper. You were one of them.");
+  setTimeout(()=>narrate("You are Wren, a foundling of Carrowgate — orphaned, unremarkable, and about to become a good deal more remarkable than is strictly safe."),3200);
+  setTimeout(()=>narrate("An old woman named Maren Ashglass is reading the coals in the square, and the coals are reading you. Go and see what they say — walk to her and press the ✦ Talk button (or E)."),6600);
+}
+function applyState(isNew){
+  const px = isNew?0:(S.px!==undefined?S.px:0);
+  const pz = isNew?-2:(S.pz!==undefined?S.pz:-2);
+  PLAYER.group.position.set(px,0,pz);
+  PLAYER.angle=0; PLAYER.group.rotation.y=0;
+  clearMinions(); resetBoss();
+  RT.bossSpawned=false; RT.bossMet=false; RT.bossDefeated=!!S.flags.ending;
+  RT.gateOpen=false;
+  DOG.group.position.set(2,0,-2.5);
+  DOG.group.visible=!!S.flags.hasDog;
+  updateHeroAppearance(); updateWeaponVisual(); updateHUD(); setObjective(S.objective||'Find the ember-reader in Carrowgate square.');
+  if(S.flags.gateOpen) openGate(true);
+  if(S.flags.dogQuest && !S.flags.dogRescued){ S.flags.dogQuest=false; startDogQuest(); }
+  camera.position.set(px,CFG.CAM_HEIGHT,pz-CFG.CAM_DIST);
+  camera.lookAt(px,1.6,pz);
+}
+function enterWorld(isNew){
+  if(!RT.builtWorld){
+    buildWorld(); buildPlayer(); buildDog(); buildNPCs();
+    RT.builtWorld=true;
+  }
+  applyState(isNew);
+  $('title').classList.add('hidden');
+  $('ending').classList.add('hidden');
+  $('modal').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  $('controls').classList.remove('hidden');
+  RT.started=true; RT.paused=false; RT.inDialogue=false;
+  if(isNew) setTimeout(intro,500);
+}
+function newGame(){
+  if(RT.builtWorld){ sessionStorage.setItem('beacon_intent','new'); location.reload(); return; }
+  S=freshState(); saveGame(); enterWorld(true);
+}
+function continueGame(){
+  if(RT.builtWorld){ sessionStorage.setItem('beacon_intent','cont'); location.reload(); return; }
+  if(!loadGame()) S=freshState();
+  enterWorld(false);
+}
+function quitToTitle(){ saveGame(); location.reload(); }
+
+/* save player position on every save */
+const _save=saveGame;
+saveGame=function(){
+  if(PLAYER.group){ S.px=PLAYER.group.position.x; S.pz=PLAYER.group.position.z; }
+  _save();
+};
+
+/* ---------------------------------------------------------------------------
+   36. INIT + ERROR HANDLING
+--------------------------------------------------------------------------- */
+function showError(err){
+  const el=$('loadErr');
+  el.style.display='flex';
+  el.innerHTML='<div style="font-family:Cinzel,serif;color:#e7c66a;font-size:22px;margin-bottom:14px">The Tale Stumbles</div>'+
+    '<div>'+(err&&err.message?err.message:'Something went wrong loading the world.')+'</div>'+
+    '<div style="margin-top:16px;color:#8a7d60;font-size:13px">If the 3D engine failed to load, check your connection and reload the page.</div>';
+  try{ console.error(err); }catch(e){}
+}
+function init(){
+  try{
+    if(typeof THREE==='undefined'){ showError({message:'Could not load the 3D engine (Three.js). Check your connection and reload.'}); return; }
+    initThree();
+    buildAssets();
+    setupTouch();
+    window.addEventListener('keydown',onKeyDown);
+    window.addEventListener('keyup',onKeyUp);
+    $('newGame').onclick=newGame;
+    $('continueGame').onclick=continueGame;
+    $('endReplay').onclick=newGame;
+    if(!hasSave()) $('continueGame').style.display='none';
+    startLoop();
+    const intent=sessionStorage.getItem('beacon_intent');
+    sessionStorage.removeItem('beacon_intent');
+    if(intent==='new'){ S=freshState(); saveGame(); enterWorld(true); }
+    else if(intent==='cont'){ if(!loadGame()) S=freshState(); enterWorld(false); }
+    // otherwise the title screen remains visible
+  }catch(err){ showError(err); }
+}
+window.addEventListener('load', init);
+</script>
+</body>
+</html>
