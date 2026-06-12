@@ -1020,25 +1020,25 @@ function addMorality(delta){
 const DOG = { group:null, barkT:0, lungeT:0, x:0, z:0 };
 function buildDog(){
   const g = new THREE.Group();
-  const fur = new THREE.MeshStandardMaterial({color:0x9a6a3a, roughness:0.85});
-  const fur2= new THREE.MeshStandardMaterial({color:0x664322, roughness:0.85});
-  const dark= new THREE.MeshStandardMaterial({color:0x241208, roughness:0.6});
+  const A=function(c,glow){ return (typeof alebrijeMat==='function')?alebrijeMat(c,(glow===undefined?0.22:glow)):new THREE.MeshStandardMaterial({color:c,roughness:0.6}); };
+  const cBody=A(0x00e5ff,0.20), cChest=A(0xff2d95,0.28), cHaunch=A(0x76ff03,0.24), cSnout=A(0xff6d00,0.26), cLeg=A(0x9b30ff,0.26), cTail=A(0xffea00,0.30), cNose=A(0xff1744,0.32);
+  const cEye=new THREE.MeshStandardMaterial({color:0xffea00,emissive:0xffea00,emissiveIntensity:1.1,roughness:0.3});
   const mk=(geo,mat,x,y,z,rx,rz)=>{ const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; m.castShadow=true; m.receiveShadow=true; g.add(m); return m; };
-  mk(new THREE.CylinderGeometry(0.24,0.21,0.78,14), fur, 0,0.5,0, Math.PI/2);   // barrel body
-  mk(new THREE.SphereGeometry(0.24,14,12), fur, 0,0.5,0.36);                    // chest
-  mk(new THREE.SphereGeometry(0.21,14,12), fur, 0,0.52,-0.4);                   // haunch
-  mk(new THREE.SphereGeometry(0.2,14,12),  fur, 0,0.66,0.54);                   // head
-  mk(new THREE.CylinderGeometry(0.09,0.12,0.22,12), fur2, 0,0.6,0.72, Math.PI/2);// snout
-  mk(new THREE.SphereGeometry(0.05,8,8), dark, 0,0.6,0.84);                     // nose
-  const eL=mk(new THREE.ConeGeometry(0.07,0.18,8), fur2, -0.11,0.82,0.5); eL.rotation.x=-0.3;
-  const eR=mk(new THREE.ConeGeometry(0.07,0.18,8), fur2,  0.11,0.82,0.5); eR.rotation.x=-0.3;
-  mk(new THREE.SphereGeometry(0.03,8,8), dark, -0.08,0.7,0.66);
-  mk(new THREE.SphereGeometry(0.03,8,8), dark,  0.08,0.7,0.66);
+  mk(new THREE.CylinderGeometry(0.24,0.21,0.78,14), cBody, 0,0.5,0, Math.PI/2);   // barrel body
+  mk(new THREE.SphereGeometry(0.24,14,12), cChest, 0,0.5,0.36);                    // chest
+  mk(new THREE.SphereGeometry(0.21,14,12), cHaunch, 0,0.52,-0.4);                  // haunch
+  mk(new THREE.SphereGeometry(0.2,14,12),  cBody, 0,0.66,0.54);                    // head
+  mk(new THREE.CylinderGeometry(0.09,0.12,0.22,12), cSnout, 0,0.6,0.72, Math.PI/2);// snout
+  mk(new THREE.SphereGeometry(0.05,8,8), cNose, 0,0.6,0.84);                       // nose
+  const eL=mk(new THREE.ConeGeometry(0.07,0.18,8), cSnout, -0.11,0.82,0.5); eL.rotation.x=-0.3;
+  const eR=mk(new THREE.ConeGeometry(0.07,0.18,8), cSnout,  0.11,0.82,0.5); eR.rotation.x=-0.3;
+  mk(new THREE.SphereGeometry(0.035,8,8), cEye, -0.08,0.7,0.66);
+  mk(new THREE.SphereGeometry(0.035,8,8), cEye,  0.08,0.7,0.66);
   const legGeo=new THREE.CylinderGeometry(0.06,0.05,0.42,10);
   DOG.legs=[];
-  const dogLeg=(x,z)=>{ const p=new THREE.Group(); p.position.set(x,0.42,z); const l=new THREE.Mesh(legGeo,fur2); l.position.set(0,-0.21,0); l.castShadow=true; p.add(l); g.add(p); DOG.legs.push(p); return p; };
+  const dogLeg=(x,z)=>{ const p=new THREE.Group(); p.position.set(x,0.42,z); const l=new THREE.Mesh(legGeo,cLeg); l.position.set(0,-0.21,0); l.castShadow=true; p.add(l); g.add(p); DOG.legs.push(p); return p; };
   dogLeg(-0.15,0.26); dogLeg(0.15,0.26); dogLeg(-0.15,-0.28); dogLeg(0.15,-0.28);
-  const tail = mk(new THREE.CylinderGeometry(0.05,0.03,0.36,8), fur, 0,0.64,-0.56, -0.7);
+  const tail = mk(new THREE.CylinderGeometry(0.05,0.03,0.36,8), cTail, 0,0.64,-0.56, -0.7);
   DOG.tail = tail;
   g.position.set(2,0,-2.5);
   g.visible = false;       // joins after quest 2
@@ -1727,6 +1727,14 @@ function updateProjectiles(dt){
   const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
   for(let i=PROJ.length-1;i>=0;i--){
     const p=PROJ[i];
+    if(p.homing){
+      const cx=p.mesh.position.x, cz=p.mesh.position.z;
+      const hd=dist2D(cx,cz,px,pz)||1, txn=(px-cx)/hd, tzn=(pz-cz)/hd;
+      const sp=Math.sqrt(p.vx*p.vx+p.vz*p.vz)||7;
+      p.vx += (txn*sp-p.vx)*Math.min(1,dt*p.homing);
+      p.vz += (tzn*sp-p.vz)*Math.min(1,dt*p.homing);
+      const nm=Math.sqrt(p.vx*p.vx+p.vz*p.vz)||1; p.vx=p.vx/nm*sp; p.vz=p.vz/nm*sp;
+    }
     p.mesh.position.x += p.vx*dt;
     p.mesh.position.z += p.vz*dt;
     p.life-=dt;
@@ -1734,7 +1742,7 @@ function updateProjectiles(dt){
     const x=p.mesh.position.x, z=p.mesh.position.z;
     if(p.boss){
       // damages player
-      if(dist2D(x,z,px,pz)<1.1){ damagePlayer(p.dmg); hit=true; }
+      if(dist2D(x,z,px,pz)<1.1){ damagePlayer(p.dmg); if(p.web && typeof applyWeb==='function') applyWeb(2.6); if(p.hex && typeof applyHex==='function') applyHex(4.5); hit=true; }
     }else{
       for(const e of ENEMIES){
         if(!e.dead && dist2D(x,z,e.x,e.z)<1.2){
@@ -2199,6 +2207,7 @@ function updateMovement(dt){
   const dodging = RT.dodgeTimer>0;
   let speed = dodging ? CFG.DODGE_SPEED : CFG.MOVE_SPEED;
   if((RT.rootT||0)>0 && !dodging){ RT.rootT-=dt; speed=0; moving=false; }
+  if((RT.slowT||0)>0 && !dodging){ speed*=0.45; }
   let mx, mz;
   if(dodging && !moving){ mx=Math.sin(PLAYER.angle); mz=Math.cos(PLAYER.angle); }
   else { mx=-s; mz=f; }   // -s: the camera faces +Z, so screen-right is world -X
@@ -2306,6 +2315,10 @@ function updateTimers(dt){
   RT.dodgeCdTimer=Math.max(0,RT.dodgeCdTimer-dt);
   RT.invuln=Math.max(0,RT.invuln-dt);
   for(const k in RT.spellCd) RT.spellCd[k]=Math.max(0,RT.spellCd[k]-dt);
+  if((RT._webMsgT||0)>0) RT._webMsgT-=dt;
+  if((RT._hexMsgT||0)>0) RT._hexMsgT-=dt;
+  if((RT.slowT||0)>0) RT.slowT-=dt;
+  if((RT.hexT||0)>0){ RT.hexT-=dt; RT.hexTick=(RT.hexTick||0)-dt; if(RT.hexTick<=0){ RT.hexTick=0.7; if(typeof damagePlayer==='function') damagePlayer(RT.hexDmg||5); const px=PLAYER.group.position.x, pz=PLAYER.group.position.z; spawnFlash(px,1.3,pz,0xaa00ff,0.5); } }
 }
 function regen(dt){
   RT.lastHurt+=dt;
@@ -2916,7 +2929,7 @@ function clearStage(){
   if(RT.sboss){ scene.remove(RT.sboss.group); RT.sboss=null; }
   if(typeof clearHazards==='function') clearHazards();
   if(RT.captive && RT.captive.group){ scene.remove(RT.captive.group); } RT.captive=null;
-  RT.rootT=0;
+  RT.rootT=0; RT.slowT=0; RT.hexT=0;
   hideBossBar();
   despawnAlly();
   STAGE.obstacles=[];
@@ -3010,8 +3023,9 @@ function spawnStageBoss(def){
   ensureStageAssets();
   RT.bossSpawned=true;
   const O=STAGE_ORIGIN;
-  STAGE.mats.bossAccent=new THREE.MeshStandardMaterial({color:def.boss.color||0xff5a5a,emissive:def.boss.color||0xaa3030,emissiveIntensity:0.7,roughness:0.4,metalness:0.2});
-  const bmats=Object.assign({},STAGE.mats,{accent:STAGE.mats.bossAccent,eye:MAT.soul});
+  const _ale = (typeof alebrijeBossMats==='function') ? alebrijeBossMats(def) : null;
+  STAGE.mats.bossAccent = _ale ? _ale.accent : new THREE.MeshStandardMaterial({color:def.boss.color||0xff5a5a,emissive:def.boss.color||0xaa3030,emissiveIntensity:0.7,roughness:0.4,metalness:0.2});
+  const bmats = _ale ? Object.assign({},STAGE.mats,_ale) : Object.assign({},STAGE.mats,{accent:STAGE.mats.bossAccent,eye:MAT.soul});
   const g=makeBossModel(def,bmats,def.boss.scale||2.0);
   const bx=O.x, bz=O.z+44;
   g.position.set(bx,0,bz); scene.add(g);
@@ -3023,6 +3037,10 @@ function spawnStageBoss(def){
     kind:def.boss.kind||null, kcd:4, ph2:false,
     rig:(g.userData&&g.userData.rig)||null, anim:(typeof animForForm==='function'?animForForm(def.boss.form):null),
     moveAmt:0, atkAnim:0, animT:0 };
+  (function(){ const K=RT.sboss.kind;
+    RT.sboss.noBolt = (K==='officer');
+    RT.sboss.boltCd = (K==='weaver')?2.4 : (K==='lanternist')?3.0 : (K==='inquisitor')?3.2 : ((K==='director'||K==='highwayman')?2.4 : 2.8);
+  })();
   showBossBar(def.boss.name);
   const fill=$('bossFill'); if(fill) fill.style.width='100%';
   narrate('\u2694  '+def.boss.name+': "'+def.boss.line+'"');
@@ -3034,7 +3052,7 @@ function bossSummon(b,n){
 }
 function doBossSpecial(b,px,pz,d){
   const sp=b.special;
-  if(sp==='volley'){ b.specCd=6; const base=Math.atan2(px-b.x,pz-b.z); for(let i=-1;i<=1;i++){ const a=base+i*0.32; boltFrom(b.x,b.z,b.x+Math.sin(a)*20,b.z+Math.cos(a)*20,b.dmg,MAT.grief); } narrate(b.name+' looses a fan of spirit-fire.'); }
+  if(sp==='volley'){ b.specCd=6; const vm=(typeof bossProjMat==='function')?bossProjMat(b.kind==='inquisitor'?'hex':(b.kind==='doctor'?'sick':(b.kind==='director'?'coin':'grief'))):MAT.grief; const base=Math.atan2(px-b.x,pz-b.z); for(let i=-1;i<=1;i++){ const a=base+i*0.32; boltFrom(b.x,b.z,b.x+Math.sin(a)*20,b.z+Math.cos(a)*20,b.dmg,vm); } narrate(b.name+' looses a fan of '+(b.kind==='director'?'spinning coin':(b.kind==='doctor'?'pestilent vapour':(b.kind==='inquisitor'?'hexfire':'spirit-fire')))+'.'); }
   else if(sp==='charge'){ if(d>5){ b.specCd=7; b.charge=true; b.chT=0.9; const dd=dist2D(b.x,b.z,px,pz)||1; b.chdx=(px-b.x)/dd; b.chdz=(pz-b.z)/dd; spawnRing(b.x,b.z,0xff8060,5); } else { b.specCd=2; } }
   else if(sp==='aoe'){ b.specCd=7; spawnRing(b.x,b.z,0xff5020,12); spawnFlash(b.x,1.5,b.z,0xff6020,2.2); if(d<8) damagePlayer(b.dmg+4); narrate(b.name+' erupts \u2014 the very ground burns.'); }
   else { b.specCd=6; bossSummon(b,2); }
@@ -3058,7 +3076,7 @@ function updateStageBoss(dt){
   } else if(d>4){ const spd=3.4*b.slowMul*dt; b.x+=dx*spd; b.z+=dz*spd; bMoving=1; }
   b.moveAmt += (bMoving - (b.moveAmt||0))*Math.min(1,dt*8);
   if(!b.charge && d<4.5 && b.slamCd<=0){ b.slamCd=2.6; b.atkAnim=0.5; spawnRing(b.x,b.z,(b.special==='aoe')?0xff7030:0x88c0ff,7.5); if(d<5.5) damagePlayer(b.dmg); }
-  if(!b.charge && d>3 && b.atkCd<=0){ b.atkCd=2.4; b.atkAnim=0.5; boltFrom(b.x,b.z,px,pz,b.dmg,(b.special==='aoe')?MAT.ember:MAT.grief); }
+  if(!b.charge && d>3 && b.atkCd<=0 && !b.noBolt){ b.atkCd=b.boltCd||2.6; b.atkAnim=0.5; if(typeof fireBossBolt==='function') fireBossBolt(b,px,pz); else boltFrom(b.x,b.z,px,pz,b.dmg,MAT.grief); }
   if(b.specCd<=0) doBossSpecial(b,px,pz,d);
   if(b.kcd>0) b.kcd-=dt;
   if(b.kind && typeof bossKindTick==='function') bossKindTick(b,dt,px,pz,d);
@@ -3253,7 +3271,7 @@ function travelTo(id){ if(typeof closeModal==='function') closeModal(); enterSta
 const HAZARDS=[];
 function spawnHazard(x,z,r,life,type){
   if(HAZARDS.length>42) return;
-  const color = type==='fire'?0xff4a18 : type==='plague'?0x7aa84a : type==='surge'?0x66b0d0 : 0x88c0ff;
+  const color = type==='fire'?0xff4a18 : type==='plague'?0x7aa84a : type==='surge'?0x66b0d0 : type==='web'?0xeaf4ff : 0x88c0ff;
   const mat=new THREE.MeshBasicMaterial({color:color,transparent:true,opacity:0.40,depthWrite:false});
   const m=new THREE.Mesh(GEO.plane,mat); m.rotation.x=-Math.PI/2; m.scale.set(r*2,r*2,1); m.position.set(x,0.07,z); scene.add(m);
   HAZARDS.push({mesh:m,mat:mat,x:x,z:z,r:r,life:life,maxLife:life,type:type,tick:0});
@@ -3265,7 +3283,8 @@ function updateHazards(dt){
   for(let i=HAZARDS.length-1;i>=0;i--){ const h=HAZARDS[i];
     h.life-=dt; h.tick-=dt;
     h.mat.opacity=clamp(0.40*(h.life/h.maxLife)+0.06,0.05,0.5);
-    if(dist2D(px,pz,h.x,h.z)<h.r && h.tick<=0){ h.tick=0.5; damagePlayer(h.type==='fire'?7:h.type==='surge'?9:5); }
+    if(h.type==='web'){ if(dist2D(px,pz,h.x,h.z)<h.r) RT.slowT=Math.max(RT.slowT||0,0.6); }
+    else if(dist2D(px,pz,h.x,h.z)<h.r && h.tick<=0){ h.tick=0.5; damagePlayer(h.type==='fire'?7:h.type==='surge'?9:5); }
     if(h.life<=0){ scene.remove(h.mesh); if(h.mat&&h.mat.dispose) h.mat.dispose(); HAZARDS.splice(i,1); }
   }
 }
@@ -3353,6 +3372,32 @@ function bossKindTick(b,dt,px,pz,d){
       spawnRing(b.x+fx*2,b.z+fz*2,0xff3030,5.0);
       setTimeout(function(){ if(RT.sboss!==b) return; const ppx=PLAYER.group.position.x, ppz=PLAYER.group.position.z, cx=b.x+fx*2.4, cz=b.z+fz*2.4; spawnFlash(cx,1.2,cz,0xffffff,1.2); spawnRing(cx,cz,0xff4040,5.4); if(dist2D(ppx,ppz,cx,cz)<5.0) damagePlayer(b.dmg+6); },420);
     }
+  } else if(b.kind==='weaver'){
+    b._brood=(b._brood||7)-dt;
+    if(b._brood<=0 && d<28){ b._brood=10; bossSummon(b,2); narrate(b.name+' looses a brood of skittering young.'); }
+    b._webp=(b._webp||3)-dt;
+    if(b._webp<=0){ b._webp=4.5; if(typeof spawnHazard==='function') spawnHazard(px,pz,2.4,5,'web'); }
+  } else if(b.kind==='inquisitor'){
+    if(b.kcd<=0 && d<22){ b.kcd=7.0; b.atkAnim=0.5;
+      const tx=px, tz=pz; narrate(b.name+' calls down a cleansing pyre \u2014 move!'); spawnRing(tx,tz,0xff7a30,3.2);
+      setTimeout(function(){ if(RT.sboss!==b) return; const ppx=PLAYER.group.position.x, ppz=PLAYER.group.position.z; spawnFlash(tx,1.6,tz,0xffa050,1.8); if(typeof spawnHazard==='function') spawnHazard(tx,tz,2.4,3,'fire'); if(dist2D(ppx,ppz,tx,tz)<3.2){ damagePlayer(b.dmg+4); if(typeof applyHex==='function') applyHex(4.0); } },820);
+    }
+  } else if(b.kind==='lanternist'){
+    b._shade=(b._shade||6)-dt;
+    if(b._shade<=0 && d<28){ b._shade=9; bossSummon(b,2); narrate(b.name+' lifts the lantern, and shades crawl from the dark.'); }
+  } else if(b.kind==='officer'){
+    if(b.kcd<=0 && d<26){ b.kcd=5.5; b.atkAnim=0.5;
+      const dd=d||1, dx=(px-b.x)/dd, dz=(pz-b.z)/dd;
+      narrate(b.name+' dresses the line \u2014 \u201CMake ready... present...!\u201D');
+      for(let s=2;s<=12;s+=2) spawnRing(b.x+dx*s,b.z+dz*s,0xffd060,2.0);
+      setTimeout(function(){ if(RT.sboss!==b) return; const ppx=PLAYER.group.position.x, ppz=PLAYER.group.position.z;
+        for(let s=2;s<=12;s+=2) spawnFlash(b.x+dx*s,1.2,b.z+dz*s,0xfff0a0,0.8);
+        const along=(ppx-b.x)*dx+(ppz-b.z)*dz, hx=b.x+dx*along, hz=b.z+dz*along, perp=dist2D(ppx,ppz,hx,hz);
+        if(along>0 && along<14 && perp<2.4){ damagePlayer(b.dmg+5); narrate('The volley tears across the line where you stand!'); }
+      },760);
+    }
+    b._sab=(b._sab||4)-dt;
+    if(b._sab<=0 && d>5 && d<16 && !b.charge){ b._sab=8; b.charge=true; b.chT=0.8; const dd2=dist2D(b.x,b.z,px,pz)||1; b.chdx=(px-b.x)/dd2; b.chdz=(pz-b.z)/dd2; spawnRing(b.x,b.z,0xff8060,5); narrate(b.name+' spurs forward, saber drawn!'); }
   }
 }
 
@@ -3635,10 +3680,10 @@ function allyPowerCd(p){ return p==='firenova'?3.4 : p==='cleave'?2.0 : p==='vol
 /* ---- assign each boss a distinct form + accessories ---- */
 function applyBossForms(){
   const sb=function(id,patch){ const s=stageById(id); if(s) Object.assign(s.boss,patch); };
-  sb('ch1',{form:'spider'});
-  sb('ch2',{form:'humanoid',hat:'brim',weapon:'needle',coat:true});
-  sb('ch3',{form:'humanoid',hat:'hood',weapon:'lantern',cape:true});
-  sb('ch4',{form:'humanoid',hat:'plume',weapon:'saber',cape:true});
+  sb('ch1',{form:'spider',kind:'weaver'});
+  sb('ch2',{form:'humanoid',hat:'brim',weapon:'needle',coat:true,kind:'inquisitor'});
+  sb('ch3',{form:'humanoid',hat:'hood',weapon:'lantern',cape:true,kind:'lanternist'});
+  sb('ch4',{form:'humanoid',hat:'plume',weapon:'saber',cape:true,kind:'officer'});
   sb('ch5',{form:'humanoid',hat:'hood',weapon:'axe',broad:true});
   sb('ch6',{form:'humanoid',hat:'top',weapon:'cane',coat:true,beak:true});
   sb('ch7',{form:'lavagolem'});
@@ -4429,6 +4474,104 @@ function mgArchery(id){
     document.getElementById('arAgain').onclick=function(){ mgArchery(id); };
     document.getElementById('arBack').onclick=function(){ renderTown(id); };
   }
+}
+
+
+/* ===== ALEBRIJE COLOURS + BOSS STATUS ATTACKS (spliced) ===== */
+/* ===========================================================================
+   THE BEACON — ALEBRIJE COLOURS + BOSS STATUS ATTACKS
+   Bosses (and Pip) are painted in the vivid, saturated palette of Mexican
+   alebrijes; each boss fires a themed projectile and wields a signature
+   ability with a real status effect (web-slow, witch-hex, homing wisps, ...).
+=========================================================================== */
+
+/* ---- the alebrije palette: hot, contrasting, folk-art brights ---- */
+const ALEBRIJE = [0xff2d95,0x00e5ff,0xff6d00,0x76ff03,0xffea00,0x9b30ff,0xff1744,0x00b4d8,0xff9100,0x18ffb0,0xff4081,0x7c4dff];
+function alebrijePalette(seed){
+  const idx=[]; let s=((seed||1)*2654435761)>>>0;
+  while(idx.length<4){ s=(s*1664525+1013904223)>>>0; const k=s%ALEBRIJE.length; if(idx.indexOf(k)<0) idx.push(k); }
+  return idx.map(function(i){ return ALEBRIJE[i]; });
+}
+function alebrijeMat(color,glow){
+  return new THREE.MeshStandardMaterial({color:color,emissive:color,emissiveIntensity:(glow===undefined?0.30:glow),roughness:0.42,metalness:0.12});
+}
+function alebrijeBossMats(def){
+  const pal=alebrijePalette((def&&def.num?def.num:1)*7+3);
+  return {
+    body:  alebrijeMat(pal[0],0.30),
+    body2: alebrijeMat(pal[1],0.30),
+    metal: new THREE.MeshStandardMaterial({color:pal[2],emissive:pal[2],emissiveIntensity:0.40,roughness:0.30,metalness:0.55}),
+    accent:alebrijeMat(pal[3],0.55),
+    ghost: new THREE.MeshStandardMaterial({color:pal[1],emissive:pal[1],emissiveIntensity:0.7,transparent:true,opacity:0.72,roughness:0.4,depthWrite:false}),
+    eye:   MAT.soul
+  };
+}
+
+/* ---- player status effects ---- */
+function applyWeb(t){
+  RT.slowT=Math.max(RT.slowT||0, t||2.4);
+  if((RT._webMsgT||0)<=0){ RT._webMsgT=3.2; narrate('Webbed! Your steps drag \u2014 you are slowed.'); }
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z; spawnRing(px,pz,0xeaf4ff,3.0);
+}
+function applyHex(t){
+  RT.hexT=Math.max(RT.hexT||0, t||4.5); RT.hexDmg=5;
+  if((RT.hexTick||0)<=0) RT.hexTick=0.7;
+  if((RT._hexMsgT||0)<=0){ RT._hexMsgT=3.2; narrate('A witch-brand sears into you \u2014 it gnaws at your life.'); }
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z; spawnFlash(px,1.5,pz,0xaa00ff,1.1);
+}
+
+/* ---- themed boss projectile materials (built once, on first use) ---- */
+let _bpm=null;
+function bossProjMat(kind){
+  if(!_bpm){
+    const mk=function(c,e,ei,rough,metal){ return new THREE.MeshStandardMaterial({color:c,emissive:e,emissiveIntensity:(ei===undefined?0.6:ei),roughness:(rough===undefined?0.5:rough),metalness:(metal||0)}); };
+    _bpm={
+      web:    mk(0xeaf4ff,0xbcd0e0,0.30,0.7,0.0),
+      wisp:   mk(0xaaffcc,0x66ffaa,1.00,0.4,0.0),
+      sick:   mk(0x9ad24a,0x6aa820,0.80,0.5,0.0),
+      hex:    mk(0xcc66ff,0xaa00ff,1.00,0.4,0.0),
+      iron:   mk(0x9aa0a8,0x20242a,0.20,0.5,0.7),
+      axe:    mk(0xb6bac2,0x303030,0.20,0.4,0.8),
+      cleaver:mk(0xd64a3c,0x802018,0.40,0.4,0.6),
+      lead:   mk(0x55585f,0x101010,0.20,0.5,0.6),
+      coin:   mk(0xffd23a,0xaa7a10,0.70,0.3,0.7)
+    };
+  }
+  if(kind==='ember') return MAT.ember;
+  return _bpm[kind]||MAT.grief;
+}
+
+/* ---- special projectiles ---- */
+function webBolt(x,z,tx,tz,dmg){
+  const d=dist2D(x,z,tx,tz)||1, dx=(tx-x)/d, dz=(tz-z)/d, sp=12;
+  const m=new THREE.Mesh(GEO.sphere, bossProjMat('web')); m.position.set(x+dx*1.5,1.7,z+dz*1.5); m.scale.set(0.95,0.95,0.95); scene.add(m);
+  PROJ.push({mesh:m, vx:dx*sp, vz:dz*sp, life:2.8, dmg:dmg, kind:'web', boss:true, web:true});
+}
+function hexBolt(x,z,tx,tz,dmg){
+  const d=dist2D(x,z,tx,tz)||1, dx=(tx-x)/d, dz=(tz-z)/d, sp=13;
+  const m=new THREE.Mesh(GEO.sphere, bossProjMat('hex')); m.position.set(x+dx*1.5,1.8,z+dz*1.5); m.scale.set(0.8,0.8,0.8); scene.add(m);
+  PROJ.push({mesh:m, vx:dx*sp, vz:dz*sp, life:2.6, dmg:dmg, kind:'hex', boss:true, hex:true});
+}
+function wispBolt(x,z,tx,tz,dmg){
+  const d=dist2D(x,z,tx,tz)||1, dx=(tx-x)/d, dz=(tz-z)/d, sp=7;
+  const m=new THREE.Mesh(GEO.sphere, bossProjMat('wisp')); m.position.set(x+dx*1.2,1.7,z+dz*1.2); m.scale.set(0.7,0.7,0.7); scene.add(m);
+  PROJ.push({mesh:m, vx:dx*sp, vz:dz*sp, life:4.2, dmg:dmg, kind:'wisp', boss:true, homing:2.0});
+}
+
+/* ---- each boss's ranged shot is themed / unique to its kind ---- */
+function fireBossBolt(b,px,pz){
+  const k=b.kind, dmg=b.dmg;
+  if(k==='weaver'){ webBolt(b.x,b.z,px,pz,Math.round(dmg*0.8)); }
+  else if(k==='inquisitor'){ hexBolt(b.x,b.z,px,pz,Math.round(dmg*0.8)); }
+  else if(k==='lanternist'){ for(let i=0;i<2;i++){ const an=Math.random()*Math.PI*2; wispBolt(b.x,b.z,b.x+Math.cos(an)*4,b.z+Math.sin(an)*4,Math.round(dmg*0.55)); } }
+  else if(k==='highwayman'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('lead'),20); }
+  else if(k==='director'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('coin'),12); }
+  else if(k==='headsman'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('axe'),14); }
+  else if(k==='butcher'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('cleaver'),14); }
+  else if(k==='warden'||k==='gallow'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('iron'),14); }
+  else if(k==='cinder'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('ember'),14); }
+  else if(k==='doctor'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('sick'),13); }
+  else { boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('grief'),15); }
 }
 
 </script>
