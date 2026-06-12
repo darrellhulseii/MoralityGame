@@ -127,6 +127,8 @@
   #weaveWheel .spell:nth-child(1){transition-delay:.02s;}
   #weaveWheel .spell:nth-child(2){transition-delay:.06s;}
   #weaveWheel .spell:nth-child(3){transition-delay:.1s;}
+  #weaveWheel .spell:nth-child(4){transition-delay:.14s;}
+  .sp-raise{background:radial-gradient(circle at 38% 30%,#c9a0ff,#3a1a5a);}
   #weaveWheel .spell:active{filter:brightness(1.2);}
   #weaveWheel .spell .ic{font-size:20px;}
   #weaveWheel .spell .mc{font-size:9px;opacity:.85;}
@@ -255,6 +257,7 @@
       <div class="spell sp-ember" data-spell="ember"><span class="ic">🔥</span><span class="mc">15</span></div>
       <div class="spell sp-shove" data-spell="shove"><span class="ic">💨</span><span class="mc">20</span></div>
       <div class="spell sp-still" data-spell="still"><span class="ic">❄</span><span class="mc">18</span></div>
+      <div class="spell sp-raise" data-spell="raise" style="display:none"><span class="ic">💀</span><span class="mc">35</span></div>
     </div>
   </div>
 
@@ -354,6 +357,12 @@ function freshState(){
     treasures: {},          // claimed treasure ids
     objective: 'Find the ember-reader in Carrowgate square.',
     questStage: 0,          // 0 intro .. 5 finale
+    // ---- chapters / skills / necromancy ----
+    location: 'hub',        // 'hub' or a chapter id ('ch1'..'ch12')
+    chaptersUnlocked: {},   // { ch1:true, ... }
+    chaptersCleared: {},    // { ch1:true, ... }
+    skills: {},             // { necromancy:true, soulharvest:true, ... }
+    necroTemplate: null,    // strongest defeated creature {arch,maxHp,name,palette,scale}
   };
 }
 let S = freshState();
@@ -871,6 +880,9 @@ function buildWorld(){
   // ---- The Beacon (z ~138) ----
   makeBeacon();
 
+  // ---- The Waystone: travel to the haunted chapters of England ----
+  if(typeof makeWaystone==='function') makeWaystone(-9,-3);
+
   // ---- Mist gate blocks the road until awakened ----
   makeMistGate();
   if(S.flags.gateOpen){ openGate(true); }
@@ -1226,8 +1238,19 @@ const DIALOGUE = {
     choices:[ { label:"I'll see to the dog.", action:function(){ startDogQuest(); }, next:null } ]
   },
   maren_again:{ speaker:'Maren Ashglass',
-    text:"The embers still point north, child. To the Beacon. Arm yourself, speak with the village, then take the road when the mist consents to part.",
-    choices:[ { label:"Thank you, Maren.", next:null } ] },
+    text:[
+      "The coals show more than your headland now, child. Severin's Beacon has worn a hole in the veil, and the dead are pouring through it — not only here, but across all of England, and across all its bloody years.",
+      "Plague and fire, scaffold and battlefield, witch-trial and wreck. Every old wound is bleeding ghosts. You must close them, year by year, before the Beacon can be reached. Use the Waystone in the square — it will carry you to each haunted chapter.",
+      "And take this: the Black Grimoire. For a price I will teach you the deeper Weave — even the raising of the dead to your own side. Necromancy is an ugly word for an honest tool.",
+    ],
+    choices:[
+      { label:"Study the Black Grimoire. (Skills)", action:function(){ closeDialogue(); openSkills(); }, next:null },
+      { label:"Where is this Waystone?", next:'maren_waystone' },
+      { label:"Thank you, Maren.", next:null },
+    ] },
+  maren_waystone:{ speaker:'Maren Ashglass',
+    text:"There — the old standing stone at the square's edge, carved before Carrowgate had a name. Lay your hand on it and choose a chapter. Clear all twelve, and the mist on the Beacon road will part of its own accord.",
+    choices:[ { label:"I'll find it.", next:null } ] },
 
   /* ---- BRIAR (sister / property / main-quest push) ---- */
   briar_root:{
@@ -1380,7 +1403,9 @@ function briarBlessing(){
   S.flags.metBriar = true;
   if(S.questStage<3) S.questStage = 2;
   unlockLore('severin');
-  setObjective("Arm yourself, then take the road north to the Beacon.");
+  if(!S.chaptersUnlocked) S.chaptersUnlocked={};
+  S.chaptersUnlocked.ch1 = true;   // the first chapter opens
+  setObjective("Use the Waystone in the square to travel England's haunted chapters.");
 }
 function buyCottage(){
   spend(150);
@@ -1571,10 +1596,13 @@ function damageEnemy(e, dmg, kx, kz){
 }
 function dieEnemy(e){
   e.dead=true;
+  if(typeof doDeathBoom==='function') doDeathBoom(e);
   spawnSoul(e.x,e.z);
   scene.remove(e.group);
   addGold(e.gold);
   const idx=ENEMIES.indexOf(e); if(idx>=0) ENEMIES.splice(idx,1);
+  if(typeof trackNecro==='function') trackNecro(e);
+  if(typeof stageOnKill==='function') stageOnKill(e);
   if(e.tag==='dogThreat'){ onDogRescued(); }
   if(e.tag==='bossMinion' && RT.boss){ /* nothing special */ }
 }
@@ -1587,13 +1615,25 @@ function updateEnemies(dt){
     if(e.atkCd>0) e.atkCd-=dt;
     if(e.hitFlash>0){ e.hitFlash-=dt; e.group.scale.setScalar((e.group.children?1:1)); }
     const d=dist2D(e.x,e.z,px,pz);
+    if(e.anim) e.anim(e,dt);
+    if(e.rcd>0) e.rcd-=dt;
     const aggro = e.tag==='dogThreat' ? 30 : 16;
+    // ranged creatures fire spectral shot from a standoff
+    if(e.ranged && d>4 && d<19 && (e.rcd||0)<=0){
+      e.rcd=2.3; e.group.rotation.y=Math.atan2((px-e.x)/(d||1),(pz-e.z)/(d||1));
+      boltFrom(e.x,e.z,px,pz, Math.max(6,Math.round(e.dmg*0.9)), STAGE.mats.bossAccent||MAT.grief, 11);
+      spawnFlash(e.x,1.4,e.z,0xbfd0ff,0.3);
+    }
     if(d<aggro){
       // chase
       const dx=(px-e.x)/d, dz=(pz-e.z)/d;
-      if(d>1.9){
+      const standoff = e.ranged ? 8.5 : 1.9;
+      if(d>standoff){
         const sp=e.speed*e.slowMul*dt;
         e.x+=dx*sp; e.z+=dz*sp;
+      } else if(e.ranged && d<6.5){
+        // back away to keep range
+        e.x-=dx*e.speed*0.6*dt; e.z-=dz*e.speed*0.6*dt;
       }
       e.group.rotation.y = Math.atan2(dx,dz);
       if(d<2.2 && e.atkCd<=0){
@@ -1604,10 +1644,11 @@ function updateEnemies(dt){
     }
     // tint flash on hit
     e.group.children.forEach(ch=>{ if(ch.material===MAT.hollow){} });
-    e.group.position.set(e.x, e.baseY, e.z);
-    // clamp to world
-    e.x=clamp(e.x,CFG.WORLD_MIN_X+2,CFG.WORLD_MAX_X-2);
-    e.z=clamp(e.z,CFG.WORLD_MIN_Z+2,CFG.WORLD_MAX_Z-2);
+    e.group.position.set(e.x, (e.hoverY||0)+e.baseY, e.z);
+    // clamp to active area
+    const EB = RT.bounds || {minX:CFG.WORLD_MIN_X,maxX:CFG.WORLD_MAX_X,minZ:CFG.WORLD_MIN_Z,maxZ:CFG.WORLD_MAX_Z};
+    e.x=clamp(e.x,EB.minX+2,EB.maxX-2);
+    e.z=clamp(e.z,EB.minZ+2,EB.maxZ-2);
   }
 }
 function clearMinions(){
@@ -1672,6 +1713,7 @@ function emberExplode(x,z){
   spawnRing(x,z,0xffa040,5);
   for(const e of ENEMIES){ if(!e.dead && dist2D(e.x,e.z,x,z)<3.5) damageEnemy(e, 30+S.weaveBonus); }
   if(RT.boss && dist2D(RT.boss.x,RT.boss.z,x,z)<4) damageBoss(30+S.weaveBonus);
+  if(RT.sboss && dist2D(RT.sboss.x,RT.sboss.z,x,z)<4.5) damageStageBoss(30+S.weaveBonus);
 }
 function updateProjectiles(dt){
   const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
@@ -1695,6 +1737,10 @@ function updateProjectiles(dt){
       }
       if(!hit && RT.boss && dist2D(x,z,RT.boss.x,RT.boss.z)<1.6){
         if(p.kind==='ember'){ emberExplode(x,z); } else damageBoss(p.dmg);
+        hit=true;
+      }
+      if(!hit && RT.sboss && dist2D(x,z,RT.sboss.x,RT.sboss.z)<2.2){
+        if(p.kind==='ember'){ emberExplode(x,z); } else damageStageBoss(p.dmg);
         hit=true;
       }
       if(!hit && p.kind==='ember' && p.life<=0){ emberExplode(x,z); }
@@ -1736,10 +1782,18 @@ function doMeleeHit(){
       if(tx*fx+tz*fz>0.1){ damageBoss(CFG.MELEE_DMG+S.dmgBonus); any=true; }
     }
   }
+  if(RT.sboss){
+    const d=dist2D(RT.sboss.x,RT.sboss.z,px,pz);
+    if(d<CFG.MELEE_RANGE+1.4){
+      const tx=(RT.sboss.x-px)/(d||1), tz=(RT.sboss.z-pz)/(d||1);
+      if(tx*fx+tz*fz>0.05){ damageStageBoss(CFG.MELEE_DMG+S.dmgBonus); any=true; }
+    }
+  }
   if(any) spawnFlash(px+fx*1.8,1.3,pz+fz*1.8,0xffffff,0.5);
 }
 function castSpell(name){
   if(RT.inDialogue||RT.paused) return;
+  if(name==='raise'){ castRaise(); return; }
   if(!S.weaveUnlocked){ narrate("You haven't learned the Weave yet. Seek Maren Ashglass in the square."); return; }
   if(RT.spellCd[name]>0) return;
   const baseCost = name==='ember'?15 : name==='shove'?20 : 18;
@@ -1753,6 +1807,7 @@ function castSpell(name){
     spawnRing(px,pz,0x9ad0ff,9);
     for(const e of ENEMIES){ if(e.dead) continue; const d=dist2D(e.x,e.z,px,pz); if(d<5.5){ const dx=(e.x-px)/(d||1), dz=(e.z-pz)/(d||1); damageEnemy(e, 18+S.weaveBonus, dx*2.2, dz*2.2); } }
     if(RT.boss && dist2D(RT.boss.x,RT.boss.z,px,pz)<5.5) damageBoss(16+S.weaveBonus);
+    if(RT.sboss && dist2D(RT.sboss.x,RT.sboss.z,px,pz)<5.5) damageStageBoss(16+S.weaveBonus);
   }
   else if(name==='still'){
     spawnRing(px,pz,0xbfeaff,7);
@@ -1766,6 +1821,7 @@ function castSpell(name){
 --------------------------------------------------------------------------- */
 function damagePlayer(n){
   if(RT.invuln>0) return;
+  if(S.skills && S.skills.ironhide) n*=0.85;
   S.hp=clamp(S.hp-n,0,S.maxHp); RT.lastHurt=0; updateHUD();
   // red vignette pulse
   const h=$('hurt'); h.style.boxShadow='inset 0 0 120px 30px rgba(180,30,30,'+clamp(n/40,0.2,0.7)+')';
@@ -1780,6 +1836,20 @@ const DEATH_LINES=[
 function onDeath(){
   RT.invuln=2.5;
   narrate(DEATH_LINES[randInt(0,DEATH_LINES.length-1)]);
+  if(S.location && S.location!=='hub'){
+    // died in a chapter — soft wipe and restart its encounter at the threshold
+    const O=STAGE_ORIGIN;
+    if(RT.sboss){ scene.remove(RT.sboss.group); RT.sboss=null; hideBossBar(); }
+    for(let i=ENEMIES.length-1;i>=0;i--){ scene.remove(ENEMIES[i].group); ENEMIES.splice(i,1); }
+    if(typeof despawnAlly==='function') despawnAlly();
+    RT.killCount=0; RT.bossSpawned=false; RT._spawnT=0;
+    PLAYER.group.position.set(O.x,0,O.z-50); PLAYER.angle=0; PLAYER.group.rotation.y=0;
+    S.hp=S.maxHp; S.mp=S.maxMp;
+    narrate("The chapter spits you back to its threshold. The dead you felled have risen anew. Try again — or flee via the Pause menu.");
+    if(RT.stage){ setObjective(RT.stage.task); spawnWave(RT.stage, Math.min(4,RT.needKills||6)); }
+    updateHUD(); saveGame();
+    return;
+  }
   const wasBoss = !!RT.boss;
   if(wasBoss){
     // reset the boss fight, respawn at fen edge
@@ -1936,6 +2006,8 @@ function updateInteractions(){
     if(best){
       const trade = (best.id==='roark'||best.id==='wenna');
       RT.interact={type:'npc', data:best, text:(trade?'Trade with ':'Speak with ')+best.name};
+    } else if(S.location==='hub' && dist2D(px,pz,-9,-3)<3.4){
+      RT.interact={type:'waystone', text: S.flags.metBriar ? 'The Waystone — travel' : 'The Waystone (speak with Maren first)'};
     } else if(S.ownsCottage && dist2D(px,pz,-14,7)<3.2){
       RT.interact={type:'rest', text:'Rest at the cottage'};
     }
@@ -1950,6 +2022,10 @@ function tryInteract(){
   if(RT.interact.type==='dig') digTreasure(RT.interact.data);
   else if(RT.interact.type==='npc') openDialogue(npcDialogueRoot(RT.interact.data.id));
   else if(RT.interact.type==='rest') restAtCottage();
+  else if(RT.interact.type==='waystone'){
+    if(S.flags.metBriar){ openWorldMap(); }
+    else narrate("The standing stone hums faintly under your hand, but the way is closed. Speak with Maren Ashglass in the square first.");
+  }
 }
 function digTreasure(t){
   if(S.treasures[t.id]) return;
@@ -1995,6 +2071,7 @@ function onKeyDown(e){
   else if(k==='1') castSpell('ember');
   else if(k==='2') castSpell('shove');
   else if(k==='3') castSpell('still');
+  else if(k==='4') castSpell('raise');
   else if(k===' ') { e.preventDefault(); doDodge(); }
   else if(k==='e') tryInteract();
   else if(k==='q') usePotion();
@@ -2053,7 +2130,7 @@ function setupTouch(){
   press('bDodge', doDodge);
   press('bInteract', tryInteract);
   press('bSwap', swapWeapon);
-  press('bWeave', ()=>{ RT.weaveOpen=!RT.weaveOpen; $('weaveWheel').classList.toggle('open', RT.weaveOpen); });
+  press('bWeave', ()=>{ RT.weaveOpen=!RT.weaveOpen; const rb=document.querySelector('.sp-raise'); if(rb) rb.style.display = (S.skills&&S.skills.necromancy)?'flex':'none'; $('weaveWheel').classList.toggle('open', RT.weaveOpen); });
   document.querySelectorAll('#weaveWheel .spell').forEach(sp=>{
     const h=(e)=>{ e.preventDefault(); castSpell(sp.getAttribute('data-spell')); };
     sp.addEventListener('touchstart',h,{passive:false}); sp.addEventListener('mousedown',h);
@@ -2068,10 +2145,13 @@ function setupTouch(){
    29. PAUSE MENU
 --------------------------------------------------------------------------- */
 function openMenu(){
+  const inChapter = S.location && S.location!=='hub';
+  const retBtn = inChapter ? '<button class="btn ghost" id="mReturn">Abandon Chapter — Return to Carrowgate</button>' : '';
   const html='<h2>Pause</h2><div class="psub">Brackenholm holds its breath.</div>'+
     '<div class="codexItem"><div class="info"><b>'+S.name+' of Carrowgate</b><small>'+stageTitle()+' · '+($('moralLabel')?$('moralLabel').textContent:'')+' · '+S.gold+'g</small></div></div>'+
     '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">'+
     '<button class="btn" id="mResume">Resume</button>'+
+    retBtn+
     '<button class="btn ghost" id="mSave">Save</button>'+
     '<button class="btn danger" id="mQuit">Save &amp; Quit to Title</button></div>'+
     '<div class="close">✕</div>';
@@ -2079,13 +2159,15 @@ function openMenu(){
   $('mResume').onclick=closeModal;
   $('mSave').onclick=()=>{ saveGame(); narrate("Your tale is recorded."); closeModal(); };
   $('mQuit').onclick=()=>{ saveGame(); closeModal(); quitToTitle(); };
+  if(inChapter && $('mReturn')) $('mReturn').onclick=()=>{ closeModal(); returnToHub(true); };
 }
 
 /* ---------------------------------------------------------------------------
    30. MOVEMENT + CAMERA + ANIMATION
 --------------------------------------------------------------------------- */
 function blocked(x,z){
-  for(const o of WORLD.obstacles){ if(dist2D(x,z,o.x,o.z) < o.r+0.6) return true; }
+  const obs = (typeof activeObstacles==='function') ? activeObstacles() : WORLD.obstacles;
+  for(const o of obs){ if(dist2D(x,z,o.x,o.z) < o.r+0.6) return true; }
   return false;
 }
 let _walkT=0;
@@ -2098,6 +2180,7 @@ function updateMovement(dt){
   let moving = mag>0.08;
   const dodging = RT.dodgeTimer>0;
   let speed = dodging ? CFG.DODGE_SPEED : CFG.MOVE_SPEED;
+  if((RT.rootT||0)>0 && !dodging){ RT.rootT-=dt; speed=0; moving=false; }
   let mx, mz;
   if(dodging && !moving){ mx=Math.sin(PLAYER.angle); mz=Math.cos(PLAYER.angle); }
   else { mx=-s; mz=f; }   // -s: the camera faces +Z, so screen-right is world -X
@@ -2112,8 +2195,9 @@ function updateMovement(dt){
     else if(!blocked(ox,nz)) nx=ox;
     else { nx=ox; nz=oz; }
   }
-  nx=clamp(nx,CFG.WORLD_MIN_X+1,CFG.WORLD_MAX_X-1);
-  nz=clamp(nz,CFG.WORLD_MIN_Z+1,CFG.WORLD_MAX_Z-1);
+  const B = RT.bounds || {minX:CFG.WORLD_MIN_X,maxX:CFG.WORLD_MAX_X,minZ:CFG.WORLD_MIN_Z,maxZ:CFG.WORLD_MAX_Z};
+  nx=clamp(nx,B.minX+1,B.maxX-1);
+  nz=clamp(nz,B.minZ+1,B.maxZ-1);
 
   if(moving && (Math.abs(mx)>0.01||Math.abs(mz)>0.01)){
     PLAYER.angle=Math.atan2(mx,mz);
@@ -2205,12 +2289,13 @@ function gateCheck(dt){
   if(RT.gateOpen) return;
   const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
   if(pz>22 && pz<37 && Math.abs(px)<8){
-    if(S.weaveUnlocked && S.flags.metBriar){
+    if(S.chaptersCleared && S.chaptersCleared.ch12){
       openGate();
-      narrate("The mist on the road shudders and parts, as if the headland has been waiting for you. It has.");
+      narrate("The mist on the road shudders and parts at last. The land's old wounds are closed; only the Beacon's remains. The headland has been waiting for you. It has.");
     }else if(RT.gateMsgT<=0){
       RT.gateMsgT=7;
-      narrate("A wall of cold mist bars the road north. It won't part until you've learned the Weave and spoken with your sister Briar.");
+      const done=Object.keys(S.chaptersCleared||{}).length;
+      narrate("A wall of cold mist bars the road north — the Beacon will not be reached while England's dead still walk. Travel the chapters from the Waystone in the square. ("+done+"/12 laid to rest.)");
     }
   }
 }
@@ -2238,13 +2323,20 @@ function update(dt){
     updateDog(dt);
     updateEnemies(dt);
     updateBoss(dt);
+    if(typeof updateStageBoss==='function') updateStageBoss(dt);
+    if(typeof updateAlly==='function') updateAlly(dt);
     updateProjectiles(dt);
-    maintainSpawns(dt);
+    if(typeof updateHazards==='function') updateHazards(dt);
     updateInteractions();
     regen(dt);
-    gateCheck(dt);
-    bossTrigger();
-    rentTick(dt);
+    if(S.location==='hub'){
+      maintainSpawns(dt);
+      gateCheck(dt);
+      bossTrigger();
+      rentTick(dt);
+    } else if(typeof stageUpdate==='function'){
+      stageUpdate(dt);
+    }
   }else{
     $('prompt').classList.add('hidden');
   }
@@ -2306,8 +2398,14 @@ function intro(){
   setTimeout(()=>narrate("An old woman named Maren Ashglass is reading the coals in the square, and the coals are reading you. Go and see what they say — walk to her and press the ✦ Talk button (or E)."),6600);
 }
 function applyState(isNew){
-  const px = isNew?0:(S.px!==undefined?S.px:0);
-  const pz = isNew?-2:(S.pz!==undefined?S.pz:-2);
+  const wasHub = (S.location==='hub' || !S.location);
+  S.location='hub';
+  RT.bounds = {minX:CFG.WORLD_MIN_X,maxX:CFG.WORLD_MAX_X,minZ:CFG.WORLD_MIN_Z,maxZ:CFG.WORLD_MAX_Z};
+  if(typeof STAGE!=='undefined' && STAGE){ STAGE.obstacles=[]; }
+  if(typeof despawnAlly==='function') despawnAlly();
+  RT.sboss=null;
+  const px = (isNew||!wasHub)?0 : (S.px!==undefined?S.px:0);
+  const pz = (isNew||!wasHub)?-2 : (S.pz!==undefined?S.pz:-2);
   PLAYER.group.position.set(px,0,pz);
   PLAYER.angle=0; PLAYER.group.rotation.y=0;
   clearMinions(); resetBoss();
@@ -2385,6 +2483,898 @@ function init(){
   }catch(err){ showError(err); }
 }
 window.addEventListener('load', init);
+
+/* ===== CHAPTER ENGINE (spliced) ===== */
+/* ===========================================================================
+   THE BEACON — CHAPTER ENGINE  (Phase 1)
+   13 haunted chapters of England's century · creatures · bosses · necromancy
+   Additive layer: the hub (Carrowgate) + Beacon path are untouched; chapters
+   are built in a far arena at STAGE_ORIGIN and torn down on exit.
+=========================================================================== */
+
+const STAGE = { objs:[], obstacles:[], mats:{} };
+const STAGE_ORIGIN = { x:0, z:1000 };
+function activeObstacles(){ return (S.location==='hub') ? WORLD.obstacles : STAGE.obstacles; }
+
+/* lazy assets — MAT/PART are populated at runtime (buildAssets), not at parse */
+let SG=null, ALLYMATS=null;
+function ensureStageAssets(){
+  if(SG) return;
+  SG={
+    wing:  new THREE.BoxGeometry(1.0,0.05,0.55),
+    coin:  new THREE.CylinderGeometry(0.24,0.24,0.05,10),
+    horn:  new THREE.ConeGeometry(0.09,0.42,6),
+    pike:  new THREE.CylinderGeometry(0.04,0.04,3.2,6),
+    blade: new THREE.BoxGeometry(0.10,0.95,0.03),
+    slab:  new THREE.BoxGeometry(0.9,1.2,0.18),
+    snout: new THREE.ConeGeometry(0.18,0.5,7),
+  };
+  ALLYMATS={
+    body:  new THREE.MeshStandardMaterial({color:0xffcf6a,roughness:0.5,metalness:0.3,emissive:0x6a4a10,emissiveIntensity:0.5}),
+    body2: new THREE.MeshStandardMaterial({color:0xb8902f,roughness:0.5,metalness:0.3,emissive:0x4a3208,emissiveIntensity:0.4}),
+    ghost: new THREE.MeshStandardMaterial({color:0xffe6a0,transparent:true,opacity:0.62,emissive:0xffcf6a,emissiveIntensity:0.6,roughness:0.4,depthWrite:false}),
+    metal: new THREE.MeshStandardMaterial({color:0xf0d890,roughness:0.3,metalness:0.6,emissive:0x3a2c08,emissiveIntensity:0.3}),
+    eye:   MAT.soul,
+    accent:new THREE.MeshStandardMaterial({color:0xfff2cc,emissive:0xffd060,emissiveIntensity:0.8,roughness:0.4}),
+  };
+}
+function smat(color,opts){ return new THREE.MeshStandardMaterial(Object.assign({color:color,roughness:0.85,metalness:0.0},opts||{})); }
+
+/* ---- the Waystone (hub travel monument) ---- */
+function makeWaystone(x,z){
+  ensureStageAssets();
+  const g=new THREE.Group();
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.5,0.4,8), MAT.stone); base.position.y=0.2; base.castShadow=true; base.receiveShadow=true; g.add(base);
+  const stone=new THREE.Mesh(new THREE.BoxGeometry(1.4,3.4,0.7), MAT.stone); stone.position.y=1.9; stone.castShadow=true; stone.receiveShadow=true; g.add(stone);
+  const cap=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.6,0.6), MAT.stone); cap.position.set(0,3.5,0); cap.castShadow=true; g.add(cap);
+  const rune=new THREE.Mesh(new THREE.TorusGeometry(0.55,0.1,8,20), new THREE.MeshStandardMaterial({color:0x9ad0ff,emissive:0x66b8ff,emissiveIntensity:1.2,roughness:0.3})); rune.position.set(0,2.1,0.37); g.add(rune);
+  const light=new THREE.PointLight(0x88c8ff,0.9,9); light.position.set(0,2.2,0.7); g.add(light);
+  g.position.set(x,0,z); scene.add(g);
+  WORLD.obstacles.push({x:x,z:z,r:1.3});
+  return g;
+}
+
+/* ===========================================================================
+   CHAPTER REGISTRY — 1605 → 1746, England's haunted century
+=========================================================================== */
+const STAGES=[
+  { id:'ch1', num:1, name:'The Drownfen', year:'The Drowned Years', teaser:'a bog that gives up its dead',
+    intro:"The Drownfen. They drained it for farmland, and the spades woke things the water had been politely keeping. Reeds whisper your name in a voice like wet rope.",
+    task:"Lay the bog-wights to rest, then face what mothers them.",
+    clear:"The fen settles. The water closes over its dead like a held breath finally let go.",
+    ground:0x37452f, fog:{color:0x26331f,near:16,far:108}, sun:{color:0x8fae86,intensity:0.7},
+    pal:{ghost:0x8fd6b4,body:0x5a6048,body2:0x3a4030,metal:0x6a7060,accent:0x9bbd6a},
+    props:['reed','stump','grave','reed'], propCount:30,
+    creatures:[{arch:'wraith',mul:0.8,name:'bog-wight'},{arch:'imp',mul:0.7,name:'fen-shade'}],
+    boss:{name:'The Fen-Mother',build:'wraith',scale:2.5,color:0x6fd6a8,hp:220,special:'summon',
+          line:"The fen keeps what it takes, little flame. Stay. Staaay."},
+    reward:{gold:60}, next:'ch2' },
+
+  { id:'ch2', num:2, name:'Hopwood Witch-Trials', year:'The Years of the Test', teaser:'a village hunting its own',
+    intro:"Hopwood, where every cough is witchcraft and every neighbour an informer. The familiars they swore they saw are real now, and very cross about the swimming-tests.",
+    task:"Scatter the familiars, then confront the man who made them.",
+    clear:"The bonfires gutter out. The accused and the accusers are equally dead, and equally quiet.",
+    ground:0x4a4636, fog:{color:0x33301f,near:18,far:112}, sun:{color:0xa8a070,intensity:0.75},
+    pal:{ghost:0xbcd69a,body:0x6a5f48,body2:0x44402c,metal:0x807050,accent:0xd6c060},
+    props:['cross','stump','grave','brazier'], propCount:28,
+    creatures:[{arch:'imp',mul:0.8,name:'familiar'},{arch:'beast',mul:0.9,name:'hex-hound'}],
+    boss:{name:'The Pricker',build:'revenant',scale:2.1,color:0x9a6a3a,hp:270,special:'volley',weapon:'pike',
+          line:"Hold still. This pin finds the Devil's mark on every soul — and everyone has one."},
+    reward:{gold:80}, next:'ch3' },
+
+  { id:'ch3', num:3, name:'The Powder Vaults', year:'1605', teaser:'thirty-six barrels and a lit match',
+    intro:"Cellars beneath the seat of power, stacked with black powder and blacker intent. The plot failed in life. Down here, the conspirators are still trying.",
+    task:"Snuff the powder-ghouls, then take the lantern from the man who guards the kegs.",
+    clear:"The match never reaches the powder. The vaults exhale brimstone and fall silent.",
+    ground:0x2e2622, fog:{color:0x241712,near:14,far:96}, sun:{color:0xc08040,intensity:0.6},
+    pal:{ghost:0xe0a060,body:0x4a3a2c,body2:0x2c2018,metal:0x6a5238,accent:0xff8030},
+    props:['barrel','crate','rubble','brazier'], propCount:34,
+    creatures:[{arch:'imp',mul:0.9,name:'powder-ghoul'},{arch:'wraith',mul:0.85,name:'match-wraith'}],
+    boss:{name:'The Lantern-Man',build:'revenant',scale:2.1,color:0xff7a20,hp:300,special:'aoe',
+          line:"One spark. One. That is all faith ever asks of a man with a lantern."},
+    reward:{gold:95}, next:'ch4' },
+
+  { id:'ch4', num:4, name:'Edgemoor Field', year:'1642', teaser:'a battle that will not end',
+    intro:"Edgemoor, where brother met brother and neither walked away. Roundhead and Cavalier still charge across the mud, too dead to notice the war is over.",
+    task:"Break the revenant ranks, then unhorse their grim commander.",
+    clear:"The drums stop. Both armies lie down at last in the same indifferent earth.",
+    ground:0x3c3a34, fog:{color:0x2a2824,near:18,far:116}, sun:{color:0x9a98a0,intensity:0.72},
+    pal:{ghost:0xbcc4cc,body:0x5a5e66,body2:0x3a3c42,metal:0x8a8f99,accent:0x9a3030},
+    props:['banner','rubble','grave','cart'], propCount:30,
+    creatures:[{arch:'revenant',mul:0.95,name:'revenant pikeman',weapon:'pike'},{arch:'wraith',mul:0.85,name:'musket-shade'}],
+    boss:{name:'The Ironside General',build:'revenant',scale:2.3,color:0xb04040,hp:340,special:'charge',
+          line:"Trust in God, and keep your ranks. The dead, at least, never break."},
+    reward:{gold:110}, next:'ch5' },
+
+  { id:'ch5', num:5, name:'Whitehall Scaffold', year:'1649', teaser:'a crown comes off with the head',
+    intro:"A black-draped scaffold and a crowd that came to watch a king die and never left. The axe is always falling here, in the half-second before it lands.",
+    task:"Disperse the shades of the crowd, then meet the masked man with the axe.",
+    clear:"The axe finishes its fall into empty air. The crowd, satisfied at last, disperses into dust.",
+    ground:0x2a2a2e, fog:{color:0x1c1c20,near:16,far:104}, sun:{color:0x8a8a96,intensity:0.62},
+    pal:{ghost:0xd6d6e0,body:0x303036,body2:0x18181c,metal:0x9a9aa4,accent:0xc01818},
+    props:['pew','banner','grave','rubble'], propCount:26,
+    creatures:[{arch:'revenant',mul:1.0,name:'headsman-shade'},{arch:'wraith',mul:0.9,name:'crowd-revenant'}],
+    boss:{name:'The Masked Headsman',build:'revenant',scale:2.2,color:0x202024,hp:360,special:'charge',
+          line:"I only ever do my office. Lay your neck here. It is nothing personal — it never is."},
+    reward:{gold:125}, next:'ch6' },
+
+  { id:'ch6', num:6, name:'Plaguefall', year:'1665', teaser:'red crosses on every door',
+    intro:"A London quarter sealed and forgotten, every door marked with a red cross and a prayer. The carts still creak through, and the rats have grown to the size of dogs.",
+    task:"Cull the plague-swarm, then face the doctor who never cured anyone.",
+    clear:"The bell stops tolling. The crosses fade from the doors. The quarter may breathe again.",
+    ground:0x35392f, fog:{color:0x242a20,near:15,far:98}, sun:{color:0x9aa088,intensity:0.6},
+    pal:{ghost:0xaecb8e,body:0x55503e,body2:0x33301f,metal:0x6f6a52,accent:0x8fae5a},
+    props:['cart','cross','grave','barrel'], propCount:30,
+    creatures:[{arch:'beast',mul:1.0,name:'plague-rat'},{arch:'imp',mul:0.9,name:'boil-walker'}],
+    boss:{name:'Doctor Mortlake',build:'revenant',scale:2.2,color:0x6a8a4a,hp:380,special:'volley',
+          line:"Breathe deep the posy, friend. I have a cure for living, and only that."},
+    reward:{gold:140}, next:'ch7' },
+
+  { id:'ch7', num:7, name:'The Burning', year:'1666', teaser:'the city is the bonfire',
+    intro:"It began in a baker's on Pudding Lane and ate the city in four days. Here the fire never went out — it learned to walk, and it remembers being hungry.",
+    task:"Quench the ember-imps, then break the heart of the fire itself.",
+    clear:"The last flame sputters and dies in the ash. What is left is grey, and cold, and finally still.",
+    ground:0x2c211c, fog:{color:0x2c160c,near:14,far:92}, sun:{color:0xe07030,intensity:0.7},
+    pal:{ghost:0xffb060,body:0x4a2c1c,body2:0x2a160c,metal:0x6a3a20,accent:0xff6020},
+    props:['rubble','brazier','crate','rubble'], propCount:36,
+    creatures:[{arch:'imp',mul:1.0,name:'ember-imp'},{arch:'flyer',mul:0.95,name:'ash-wraith'}],
+    boss:{name:'The Cinder-King',build:'golem',scale:2.0,color:0xff5018,hp:420,special:'aoe',
+          line:"I AM THE CITY NOW. Warm yourself. Come closer. Warmer."},
+    reward:{gold:160}, next:'ch8' },
+
+  { id:'ch8', num:8, name:"Wreckers' Cove", year:'The Smuggling Years', teaser:'false lights on a cruel coast',
+    intro:"A Cornish cove where wreckers hung lanterns to lure ships onto the rocks, then picked the drowned clean. The sea gave the wreckers back, salt-bloated and still greedy.",
+    task:"Drown the drowned again, then settle with their captain.",
+    clear:"The false lights go dark. The tide takes the wreckers back, and this time keeps them.",
+    ground:0x2c3a40, fog:{color:0x1a2a30,near:16,far:104}, sun:{color:0x7a9aa6,intensity:0.66},
+    pal:{ghost:0x8fd6d6,body:0x3a5258,body2:0x223238,metal:0x6a8088,accent:0x40c0b0},
+    props:['barrel','crate','rubble','reed'], propCount:30,
+    creatures:[{arch:'wraith',mul:1.0,name:'drowned wrecker'},{arch:'beast',mul:0.95,name:'cove-eel'}],
+    boss:{name:'Captain Gallow',build:'revenant',scale:2.3,color:0x2a8a80,hp:400,special:'summon',
+          line:"Every light's a lie, sailor. I just hung mine where it'd pay. Mind the rocks."},
+    reward:{gold:175}, next:'ch9' },
+
+  { id:'ch9', num:9, name:'Bedlam Gaol', year:'The Iron Years', teaser:'a madhouse with no doors out',
+    intro:"Half prison, half hospital, all bedlam. They chained the mad and the merely inconvenient together and sold tickets to gawp. The chains rusted; the screaming did not.",
+    task:"Still the shackle-shades, then take the keys from the man who never used them to free anyone.",
+    clear:"The chains fall slack. For the first time in a hundred years, Bedlam is merely empty.",
+    ground:0x33333a, fog:{color:0x222228,near:15,far:100}, sun:{color:0x8a8a92,intensity:0.6},
+    pal:{ghost:0xb0b4c0,body:0x44464e,body2:0x2a2c32,metal:0x7a7e88,accent:0x9090a0},
+    props:['rubble','grave','pew','crate'], propCount:30,
+    creatures:[{arch:'wraith',mul:1.05,name:'shackle-shade'},{arch:'beast',mul:1.0,name:'keeper-hound'}],
+    boss:{name:'The Warden',build:'revenant',scale:2.3,color:0x60606a,hp:440,special:'charge',
+          line:"Order, gentlemen, ORDER. A key in my hand is worth more than mercy in yours."},
+    reward:{gold:190}, next:'ch10' },
+
+  { id:'ch10', num:10, name:'The Bubble', year:'1720', teaser:'a fortune made of nothing',
+    intro:"The South-Sea madness: paper fortunes, gilded fools, and a company that traded in promises and ruin. The greed congealed into gold that walks, and paper that bites.",
+    task:"Melt down the coin-golems, then call in the debt of the man who sold the lie.",
+    clear:"The paper fortunes blow away on the wind. The gold lies still, worth exactly what it always was.",
+    ground:0x342a18, fog:{color:0x2c2410,near:16,far:108}, sun:{color:0xd0b050,intensity:0.7},
+    pal:{ghost:0xffe6a0,body:0x6a5a2a,body2:0x40360f,metal:0xe0c050,accent:0xffd040},
+    props:['coin','crate','banner','coin'], propCount:32,
+    creatures:[{arch:'golem',mul:0.85,name:'coin-golem'},{arch:'flyer',mul:1.0,name:'paper-swarm'}],
+    boss:{name:'The Director',build:'golem',scale:2.1,color:0xffc020,hp:460,special:'volley',
+          line:"Confidence, sir, is the only true currency. And you have just run out of it."},
+    reward:{gold:210}, next:'ch11' },
+
+  { id:'ch11', num:11, name:'Gallows Heath', year:'The Years of the Road', teaser:'stand and deliver, forever',
+    intro:"A fog-bound heath strung with gibbets, where highwaymen swung and swing still. A phantom coach rattles the dark, and its outriders want your purse, your life, and your company.",
+    task:"Unseat the phantom riders, then duel the gentleman who leads them.",
+    clear:"The phantom coach rattles off into the fog and does not come back. The gibbets hang empty.",
+    ground:0x32323a, fog:{color:0x202028,near:14,far:98}, sun:{color:0x80809a,intensity:0.6},
+    pal:{ghost:0xc0b0d6,body:0x44424e,body2:0x2a2832,metal:0x7a7888,accent:0x9a70c0},
+    props:['gibbet','grave','stump','cart'], propCount:30,
+    creatures:[{arch:'revenant',mul:1.1,name:'phantom rider'},{arch:'flyer',mul:1.05,name:'gibbet-crow'}],
+    boss:{name:'The Gentleman of the Road',build:'revenant',scale:2.3,color:0x6a4a9a,hp:480,special:'charge',
+          line:"Stand and deliver — your money, or your life. Take your time. I have all of eternity."},
+    reward:{gold:230}, next:'ch12' },
+
+  { id:'ch12', num:12, name:'Drumossie Moor', year:'1746', teaser:'the last charge, the cold after',
+    intro:"A grey Highland moor where a rising ended in forty minutes of grapeshot. The clans charge the line again and again into the guns, and a butcher in a red coat walks among the dead.",
+    task:"Free the clansman-wraiths from the loop, then face the Butcher's Shade.",
+    clear:"The pipes fall silent. The moor accepts its dead, and the long sorrow of it settles into the heather.",
+    ground:0x35383a, fog:{color:0x24282a,near:16,far:110}, sun:{color:0x808890,intensity:0.6},
+    pal:{ghost:0xa8c0d0,body:0x4a525a,body2:0x2c3238,metal:0x808890,accent:0x4a6a9a},
+    props:['grave','rubble','stump','banner'], propCount:32,
+    creatures:[{arch:'wraith',mul:1.15,name:'clansman-wraith'},{arch:'revenant',mul:1.1,name:'redcoat-revenant'}],
+    boss:{name:"The Butcher's Shade",build:'revenant',scale:2.5,color:0xc02020,hp:540,special:'aoe',
+          line:"No quarter. Mercy is a weakness I was promoted for never showing."},
+    reward:{gold:260}, next:null },
+];
+function stageById(id){ for(const s of STAGES){ if(s.id===id) return s; } return null; }
+function stageDiff(def){ return def.diff || (1 + (def.num-1)*0.12); }
+
+/* ===========================================================================
+   CREATURE FRAMEWORK — archetype builders share STAGE.mats
+=========================================================================== */
+const ARCH_BASE={
+  wraith:{hp:50,spd:3.1,dmg:9,hover:0},
+  imp:{hp:34,spd:3.9,dmg:7,hover:0},
+  revenant:{hp:78,spd:2.7,dmg:12,hover:0},
+  beast:{hp:46,spd:4.1,dmg:10,hover:0},
+  flyer:{hp:40,spd:3.5,dmg:8,hover:1.4},
+  golem:{hp:120,spd:1.9,dmg:16,hover:0},
+};
+function makeWraith(mats,scale){
+  const g=new THREE.Group(); const b=mats.ghost;
+  const add=(geo,x,y,z,sx,sy,sz,rx,ry,rz)=>{ const m=new THREE.Mesh(geo,b); m.position.set(x,y,z); if(sx!==undefined)m.scale.set(sx,sy||sx,sz||sx); if(rx!==undefined)m.rotation.set(rx,ry||0,rz||0); m.castShadow=false; g.add(m); return m; };
+  const tail=add(PART.tail,0,0.55,0); tail.rotation.x=Math.PI;
+  add(PART.torso,0,1.18,0);
+  add(PART.upperArm,-0.22,1.25,0.05,1,1,1,0.5,0,0.3);
+  add(PART.upperArm,0.22,1.25,0.05,1,1,1,0.5,0,-0.3);
+  add(PART.foreArm,-0.30,1.0,0.22,1,1,1,1.0,0,0.2);
+  add(PART.foreArm,0.30,1.0,0.22,1,1,1,1.0,0,-0.2);
+  add(PART.head,0,1.6,0,1,1.15,1);
+  const eL=new THREE.Mesh(PART.eye,mats.eye); eL.position.set(-0.05,1.62,0.12); eL.scale.setScalar(1.5); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye,mats.eye); eR.position.set(0.05,1.62,0.12); eR.scale.setScalar(1.5); g.add(eR);
+  g.scale.setScalar(scale||1); return g;
+}
+function makeImp(mats,scale){
+  const g=new THREE.Group(); const b=mats.ghost||mats.body;
+  const t=new THREE.Mesh(PART.torso,b); t.position.set(0,0.7,0); t.scale.set(0.7,0.7,0.7); t.castShadow=false; g.add(t);
+  const h=new THREE.Mesh(PART.head,b); h.position.set(0,1.12,0.05); h.scale.set(0.8,0.8,0.8); h.castShadow=false; g.add(h);
+  const hL=new THREE.Mesh(SG.horn,mats.accent||b); hL.position.set(-0.12,1.34,0); hL.rotation.z=0.3; g.add(hL);
+  const hR=new THREE.Mesh(SG.horn,mats.accent||b); hR.position.set(0.12,1.34,0); hR.rotation.z=-0.3; g.add(hR);
+  const aL=new THREE.Mesh(PART.upperArm,b); aL.position.set(-0.22,0.8,0.08); aL.rotation.set(0.8,0,0.2); aL.scale.setScalar(0.8); aL.castShadow=false; g.add(aL);
+  const aR=new THREE.Mesh(PART.upperArm,b); aR.position.set(0.22,0.8,0.08); aR.rotation.set(0.8,0,-0.2); aR.scale.setScalar(0.8); aR.castShadow=false; g.add(aR);
+  const lL=new THREE.Mesh(PART.thigh,b); lL.position.set(-0.12,0.35,0); lL.scale.setScalar(0.7); lL.castShadow=false; g.add(lL);
+  const lR=new THREE.Mesh(PART.thigh,b); lR.position.set(0.12,0.35,0); lR.scale.setScalar(0.7); lR.castShadow=false; g.add(lR);
+  const eL=new THREE.Mesh(PART.eye,mats.eye); eL.position.set(-0.07,1.14,0.18); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye,mats.eye); eR.position.set(0.07,1.14,0.18); g.add(eR);
+  g.scale.setScalar(scale||1); return g;
+}
+function makeRevenant(mats,scale,weapon){
+  const g=new THREE.Group();
+  const body=mats.body, dark=mats.body2||mats.body, metal=mats.metal||mats.body2||mats.body;
+  const hips=new THREE.Mesh(PART.hips,dark); hips.position.set(0,0.9,0); g.add(hips);
+  const torso=new THREE.Mesh(PART.torso,body); torso.position.set(0,1.3,0); g.add(torso);
+  const sL=new THREE.Mesh(PART.shoulder,metal); sL.position.set(-0.32,1.5,0); g.add(sL);
+  const sR=new THREE.Mesh(PART.shoulder,metal); sR.position.set(0.32,1.5,0); g.add(sR);
+  const aL=new THREE.Mesh(PART.upperArm,body); aL.position.set(-0.34,1.25,0.02); aL.rotation.z=0.12; g.add(aL);
+  const aR=new THREE.Mesh(PART.upperArm,body); aR.position.set(0.34,1.25,0.02); aR.rotation.z=-0.12; g.add(aR);
+  const fL=new THREE.Mesh(PART.foreArm,dark); fL.position.set(-0.40,0.95,0.05); g.add(fL);
+  const fR=new THREE.Mesh(PART.foreArm,dark); fR.position.set(0.40,0.95,0.05); g.add(fR);
+  const tL=new THREE.Mesh(PART.thigh,dark); tL.position.set(-0.16,0.6,0); g.add(tL);
+  const tR=new THREE.Mesh(PART.thigh,dark); tR.position.set(0.16,0.6,0); g.add(tR);
+  const shL=new THREE.Mesh(PART.shin,dark); shL.position.set(-0.16,0.2,0); g.add(shL);
+  const shR=new THREE.Mesh(PART.shin,dark); shR.position.set(0.16,0.2,0); g.add(shR);
+  const head=new THREE.Mesh(PART.head,body); head.position.set(0,1.72,0.02); g.add(head);
+  const helm=new THREE.Mesh(PART.head,metal); helm.position.set(0,1.78,-0.02); helm.scale.set(1.08,0.7,1.08); g.add(helm);
+  const eL=new THREE.Mesh(PART.eye,mats.eye); eL.position.set(-0.07,1.72,0.18); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye,mats.eye); eR.position.set(0.07,1.72,0.18); g.add(eR);
+  if(weapon==='pike'){ const p=new THREE.Mesh(SG.pike,metal); p.position.set(0.46,1.4,0.1); g.add(p); const tip=new THREE.Mesh(SG.horn,metal); tip.position.set(0.46,3.05,0.1); g.add(tip); }
+  else { const bl=new THREE.Mesh(SG.blade,metal); bl.position.set(0.46,1.05,0.12); g.add(bl); }
+  g.traverse(o=>{ if(o.isMesh && o.material!==mats.eye) o.castShadow=true; });
+  g.scale.setScalar(scale||1); return g;
+}
+function makeBeast(mats,scale){
+  const g=new THREE.Group();
+  const body=mats.body, dark=mats.body2||mats.body;
+  const torso=new THREE.Mesh(PART.torso,body); torso.position.set(0,0.55,0); torso.rotation.x=Math.PI/2; torso.scale.set(0.8,1.2,0.8); g.add(torso);
+  const head=new THREE.Mesh(PART.head,body); head.position.set(0,0.62,0.7); head.scale.set(0.85,0.85,0.85); g.add(head);
+  const snout=new THREE.Mesh(SG.snout,body); snout.position.set(0,0.55,1.02); snout.rotation.x=Math.PI/2; g.add(snout);
+  const eL=new THREE.Mesh(PART.eye,mats.eye); eL.position.set(-0.1,0.72,0.95); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye,mats.eye); eR.position.set(0.1,0.72,0.95); g.add(eR);
+  const legs=[[-0.25,0.45],[0.25,0.45],[-0.25,-0.35],[0.25,-0.35]];
+  for(const lp of legs){ const l=new THREE.Mesh(PART.shin,dark); l.position.set(lp[0],0.22,lp[1]); g.add(l); }
+  const tail=new THREE.Mesh(PART.tail,dark); tail.position.set(0,0.55,-0.7); tail.rotation.x=-1.0; tail.scale.setScalar(0.6); g.add(tail);
+  g.traverse(o=>{ if(o.isMesh && o.material!==mats.eye) o.castShadow=true; });
+  g.scale.setScalar(scale||1); return g;
+}
+function makeFlyer(mats,scale){
+  const g=new THREE.Group(); const b=mats.ghost||mats.body;
+  const body=new THREE.Mesh(PART.torso,b); body.scale.set(0.6,0.7,0.6); body.castShadow=false; g.add(body);
+  const head=new THREE.Mesh(PART.head,b); head.position.set(0,0.4,0.1); head.scale.set(0.7,0.7,0.7); head.castShadow=false; g.add(head);
+  const wL=new THREE.Mesh(SG.wing,b); wL.position.set(-0.55,0.1,0); wL.rotation.z=0.4; wL.castShadow=false; g.add(wL);
+  const wR=new THREE.Mesh(SG.wing,b); wR.position.set(0.55,0.1,0); wR.rotation.z=-0.4; wR.castShadow=false; g.add(wR);
+  const eL=new THREE.Mesh(PART.eye,mats.eye); eL.position.set(-0.08,0.42,0.28); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye,mats.eye); eR.position.set(0.08,0.42,0.28); g.add(eR);
+  g.scale.setScalar(scale||1); return g;
+}
+function makeGolem(mats,scale){
+  const g=new THREE.Group();
+  const body=mats.body, metal=mats.metal||mats.body2||mats.body;
+  const core=new THREE.Mesh(PART.torso,body); core.position.set(0,1.4,0); core.scale.set(1.5,1.6,1.4); g.add(core);
+  const sL=new THREE.Mesh(PART.shoulder,metal); sL.position.set(-0.7,1.8,0); sL.scale.setScalar(1.6); g.add(sL);
+  const sR=new THREE.Mesh(PART.shoulder,metal); sR.position.set(0.7,1.8,0); sR.scale.setScalar(1.6); g.add(sR);
+  const aL=new THREE.Mesh(PART.upperArm,metal); aL.position.set(-0.85,1.2,0); aL.scale.setScalar(1.5); g.add(aL);
+  const aR=new THREE.Mesh(PART.upperArm,metal); aR.position.set(0.85,1.2,0); aR.scale.setScalar(1.5); g.add(aR);
+  const tL=new THREE.Mesh(PART.thigh,metal); tL.position.set(-0.35,0.5,0); tL.scale.setScalar(1.4); g.add(tL);
+  const tR=new THREE.Mesh(PART.thigh,metal); tR.position.set(0.35,0.5,0); tR.scale.setScalar(1.4); g.add(tR);
+  const head=new THREE.Mesh(PART.head,body); head.position.set(0,2.25,0); head.scale.setScalar(0.9); g.add(head);
+  const heart=new THREE.Mesh(PART.eye,mats.eye); heart.position.set(0,1.5,0.55); heart.scale.setScalar(3.0); g.add(heart);
+  const eL=new THREE.Mesh(PART.eye,mats.eye); eL.position.set(-0.12,2.28,0.3); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye,mats.eye); eR.position.set(0.12,2.28,0.3); g.add(eR);
+  g.traverse(o=>{ if(o.isMesh && o.material!==mats.eye) o.castShadow=true; });
+  g.scale.setScalar(scale||1); return g;
+}
+function makeByArch(arch,mats,scale,weapon){
+  switch(arch){
+    case 'revenant': return makeRevenant(mats,scale,weapon);
+    case 'beast':    return makeBeast(mats,scale);
+    case 'imp':      return makeImp(mats,scale);
+    case 'flyer':    return makeFlyer(mats,scale);
+    case 'golem':    return makeGolem(mats,scale);
+    case 'eel':      return makeEel(mats,scale);
+    default:         return makeWraith(mats,scale);
+  }
+}
+function spawnCreature(arch,x,z,opts){
+  ensureStageAssets(); opts=opts||{};
+  const base=ARCH_BASE[arch]||ARCH_BASE.wraith;
+  const mul=opts.mul||1, diff=opts.diff||1, scale=opts.scale||1;
+  const g=makeByArch(arch,STAGE.mats,scale,opts.weapon);
+  g.position.set(x,0,z); scene.add(g);
+  const e={
+    group:g, x:x, z:z, baseY:0,
+    hp:Math.round(base.hp*mul*diff), maxHp:Math.round(base.hp*mul*diff),
+    speed:base.spd, dmg:Math.round(base.dmg*mul*Math.min(diff,1.8)),
+    atkCd:0, hitFlash:0, slowT:0, slowMul:1, bob:Math.random()*6,
+    tag:opts.tag||'stage', dead:false, gold:Math.round((5+Math.random()*8)*diff),
+    arch:arch, cname:opts.name||'thrall', cscale:scale, hoverY:base.hover,
+    ranged:!!opts.ranged, rcd:Math.random()*2, boom:!!opts.boom, deathHazard:opts.deathHazard||null,
+    anim:(arch==='eel'?eelAnim:null),
+  };
+  ENEMIES.push(e); return e;
+}
+
+/* ===========================================================================
+   STAGE SCENE — themed ground + scattered props (torn down on exit)
+=========================================================================== */
+function clearStageObjs(){ for(const o of STAGE.objs){ scene.remove(o); } STAGE.objs.length=0; }
+function sAdd(m){ scene.add(m); STAGE.objs.push(m); return m; }
+function disposeStageMats(){ for(const k in STAGE.mats){ const m=STAGE.mats[k]; if(m && m.dispose && m!==MAT.soul) m.dispose(); } STAGE.mats={}; }
+
+function addProp(type,x,z){
+  const stone=MAT.stone, wood=MAT.darkwood, wood2=MAT.wood;
+  const solid=(r)=>STAGE.obstacles.push({x:x,z:z,r:r});
+  if(type==='grave'){ const m=new THREE.Mesh(SG.slab,stone); m.position.set(x,0.6,z); m.rotation.y=Math.random()*0.5-0.25; m.castShadow=true; m.receiveShadow=true; sAdd(m); solid(0.6); }
+  else if(type==='cross'){ const v=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.4,0.12),wood); v.position.set(x,0.7,z); v.castShadow=true; sAdd(v); const h=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.12,0.12),wood); h.position.set(x,1.0,z); sAdd(h); solid(0.4); }
+  else if(type==='stump'){ const m=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.5,1.2,7),wood); m.position.set(x,0.6,z); m.castShadow=true; sAdd(m); solid(0.5); }
+  else if(type==='reed'){ const cm=STAGE.mats.accent||MAT.leaf; for(let i=0;i<5;i++){ const r=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,1.4,4),cm); r.position.set(x+rand(-0.3,0.3),0.7,z+rand(-0.3,0.3)); r.rotation.z=rand(-0.2,0.2); sAdd(r); } }
+  else if(type==='barrel'){ const m=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,1.0,10),wood2); m.position.set(x,0.5,z); m.castShadow=true; sAdd(m); solid(0.5); }
+  else if(type==='crate'){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9),wood2); m.position.set(x,0.45,z); m.rotation.y=Math.random(); m.castShadow=true; sAdd(m); solid(0.55); }
+  else if(type==='brazier'){ const b=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.25,0.6,8),stone); b.position.set(x,0.4,z); b.castShadow=true; sAdd(b); const f=new THREE.Mesh(PART.head,MAT.ember); f.position.set(x,0.9,z); f.scale.set(0.6,0.8,0.6); sAdd(f); const l=new THREE.PointLight(0xff7a30,0.8,8); l.position.set(x,1.1,z); sAdd(l); solid(0.4); }
+  else if(type==='gibbet'){ const post=new THREE.Mesh(new THREE.BoxGeometry(0.16,3.0,0.16),wood); post.position.set(x,1.5,z); post.castShadow=true; sAdd(post); const arm=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.16,0.16),wood); arm.position.set(x+0.5,2.9,z); sAdd(arm); const cage=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.8,0.5),stone); cage.position.set(x+1.0,2.3,z); sAdd(cage); solid(0.5); }
+  else if(type==='coin'){ const cmat=STAGE.mats.metal||stone; for(let i=0;i<7;i++){ const c=new THREE.Mesh(SG.coin,cmat); c.position.set(x+rand(-0.5,0.5),0.05+i*0.04,z+rand(-0.5,0.5)); c.rotation.set(rand(0,1),rand(0,3),rand(0,1)); sAdd(c); } solid(0.4); }
+  else if(type==='rubble'){ for(let i=0;i<4;i++){ const r=new THREE.Mesh(PART.head,stone); r.position.set(x+rand(-0.6,0.6),0.2,z+rand(-0.6,0.6)); r.scale.setScalar(rand(0.3,0.7)); r.castShadow=true; sAdd(r); } solid(0.5); }
+  else if(type==='banner'){ const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,3.0,6),wood); pole.position.set(x,1.5,z); pole.castShadow=true; sAdd(pole); const cloth=new THREE.Mesh(new THREE.BoxGeometry(0.05,1.2,0.8),STAGE.mats.accent||MAT.roof); cloth.position.set(x,2.4,z+0.4); sAdd(cloth); solid(0.3); }
+  else if(type==='cart'){ const bed=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.4,0.9),wood2); bed.position.set(x,0.7,z); bed.castShadow=true; sAdd(bed); const w1=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.12,12),wood); w1.rotation.x=Math.PI/2; w1.position.set(x-0.6,0.5,z+0.5); sAdd(w1); const w2=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.12,12),wood); w2.rotation.x=Math.PI/2; w2.position.set(x+0.6,0.5,z+0.5); sAdd(w2); solid(0.9); }
+  else if(type==='pew'){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.5,0.5),wood); m.position.set(x,0.5,z); m.rotation.y=Math.random()*0.4; m.castShadow=true; sAdd(m); solid(0.9); }
+  else { const m=new THREE.Mesh(PART.head,stone); m.position.set(x,0.3,z); m.scale.setScalar(rand(0.5,1.0)); m.castShadow=true; sAdd(m); solid(0.5); }
+}
+function buildStageMats(def){
+  disposeStageMats();
+  const p=def.pal||{};
+  STAGE.mats={
+    ghost: new THREE.MeshStandardMaterial({color:p.ghost||0x9fd6c4,transparent:true,opacity:0.62,emissive:p.ghost||0x6abf9e,emissiveIntensity:0.5,roughness:0.4,depthWrite:false}),
+    body:  smat(p.body||0x6a6f78),
+    body2: smat(p.body2||0x44474e),
+    metal: new THREE.MeshStandardMaterial({color:p.metal||0x8a8f99,roughness:0.35,metalness:0.6}),
+    eye:   MAT.soul,
+    accent:new THREE.MeshStandardMaterial({color:p.accent||0xd0d8e0,emissive:p.accent||0x556677,emissiveIntensity:0.6,roughness:0.5}),
+  };
+}
+function buildStageScene(def){
+  ensureStageAssets();
+  clearStageObjs();
+  const O=STAGE_ORIGIN;
+  const gmat=new THREE.MeshStandardMaterial({color:def.ground||0x556055,roughness:0.97,metalness:0.0});
+  STAGE.mats.ground=gmat;
+  const g=new THREE.Mesh(GEO.plane,gmat); g.rotation.x=-Math.PI/2; g.scale.set(124,124,1); g.position.set(O.x,0.0,O.z); g.receiveShadow=true; sAdd(g);
+  const types=def.props||['rock']; const n=def.propCount||26;
+  for(let i=0;i<n;i++){
+    const ang=Math.random()*Math.PI*2, rad=8+Math.random()*48;
+    let px=O.x+Math.cos(ang)*rad, pz=O.z+Math.sin(ang)*rad;
+    addProp(types[i%types.length], px, pz);
+  }
+  if(def.setpiece && typeof buildSetpiece==='function') buildSetpiece(def.setpiece, O.x, O.z+8);
+  if(def.rescue && typeof buildCaptive==='function') buildCaptive(def, O.x, O.z+8);
+}
+
+/* ---- enter / clear / return ---- */
+function clearStage(){
+  clearStageObjs();
+  for(let i=ENEMIES.length-1;i>=0;i--){ scene.remove(ENEMIES[i].group); ENEMIES.splice(i,1); }
+  if(RT.sboss){ scene.remove(RT.sboss.group); RT.sboss=null; }
+  if(typeof clearHazards==='function') clearHazards();
+  if(RT.captive && RT.captive.group){ scene.remove(RT.captive.group); } RT.captive=null;
+  RT.rootT=0;
+  hideBossBar();
+  despawnAlly();
+  STAGE.obstacles=[];
+}
+function spawnWave(def,count){
+  const O=STAGE_ORIGIN, diff=stageDiff(def), cs=def.creatures;
+  for(let i=0;i<count;i++){
+    const c=cs[Math.floor(Math.random()*cs.length)];
+    const ang=Math.random()*Math.PI*2, rad=12+Math.random()*22;
+    let px=PLAYER.group.position.x+Math.cos(ang)*rad;
+    let pz=PLAYER.group.position.z+Math.sin(ang)*rad;
+    px=clamp(px,O.x-54,O.x+54); pz=clamp(pz,O.z-54,O.z+54);
+    spawnCreature(c.arch,px,pz,{mul:c.mul||1,diff:diff,name:c.name,scale:c.scale||1,weapon:c.weapon,ranged:c.ranged,boom:c.boom,deathHazard:c.deathHazard});
+  }
+}
+function enterStage(id){
+  const def=stageById(id); if(!def) return;
+  ensureStageAssets();
+  clearStage();
+  buildStageMats(def);
+  buildStageScene(def);
+  S.location=id; RT.stage=def;
+  RT.killCount=0; RT.needKills=Math.min(6+def.num,14); RT.bossSpawned=false; RT.sboss=null; RT._spawnT=0;
+  if(!RT._savedFog && scene.fog){ RT._savedFog={color:scene.fog.color.getHex(),near:scene.fog.near,far:scene.fog.far}; }
+  if(scene.fog && def.fog){ scene.fog.color.setHex(def.fog.color); scene.fog.near=def.fog.near; scene.fog.far=def.fog.far; }
+  if(WORLD.sun && def.sun){ if(!RT._savedSun) RT._savedSun={c:WORLD.sun.color.getHex(),i:WORLD.sun.intensity}; WORLD.sun.color.setHex(def.sun.color); WORLD.sun.intensity=def.sun.intensity; }
+  const O=STAGE_ORIGIN;
+  RT.bounds={minX:O.x-58,maxX:O.x+58,minZ:O.z-58,maxZ:O.z+58};
+  const ex=O.x, ez=O.z-50;
+  PLAYER.group.position.set(ex,0,ez); PLAYER.angle=0; PLAYER.group.rotation.y=0;
+  if(DOG.group){ DOG.group.position.set(ex+2,0,ez-1); }
+  camera.position.set(ex,CFG.CAM_HEIGHT,ez-CFG.CAM_DIST); camera.lookAt(ex,1.6,ez);
+  setObjective(def.task);
+  narrate("— Chapter "+def.num+": "+def.name+" ("+def.year+") —");
+  setTimeout(function(){ if(S.location===id) narrate(def.intro); },1400);
+  spawnWave(def, Math.min(4,RT.needKills));
+  saveGame();
+}
+function returnToHub(showMsg){
+  clearStage();
+  disposeStageMats();
+  if(RT._savedFog && scene.fog){ scene.fog.color.setHex(RT._savedFog.color); scene.fog.near=RT._savedFog.near; scene.fog.far=RT._savedFog.far; }
+  if(RT._savedSun && WORLD.sun){ WORLD.sun.color.setHex(RT._savedSun.c); WORLD.sun.intensity=RT._savedSun.i; }
+  S.location='hub'; RT.stage=null; RT.bossSpawned=false; RT.sboss=null;
+  RT.bounds={minX:CFG.WORLD_MIN_X,maxX:CFG.WORLD_MAX_X,minZ:CFG.WORLD_MIN_Z,maxZ:CFG.WORLD_MAX_Z};
+  STAGE.obstacles=[];
+  const sx=-9, sz=1;
+  PLAYER.group.position.set(sx,0,sz); PLAYER.angle=0; PLAYER.group.rotation.y=0;
+  if(DOG.group){ DOG.group.position.set(sx+2,0,sz-1); }
+  camera.position.set(sx,CFG.CAM_HEIGHT,sz-CFG.CAM_DIST); camera.lookAt(sx,1.6,sz);
+  const cleared=Object.keys(S.chaptersCleared||{}).length;
+  if(S.chaptersCleared && S.chaptersCleared.ch12) setObjective("All twelve chapters laid to rest. Walk the road north — the Beacon awaits.");
+  else setObjective("Choose your next chapter at the Waystone. ("+cleared+"/12 cleared)");
+  narrate(showMsg ? "You step back through the Waystone. Carrowgate is grey and quiet and, for now, safe." :
+                    "The Waystone draws you home. Carrowgate is grey and quiet and, for now, safe.");
+  RT.paused=false; RT.inDialogue=false;
+  saveGame();
+}
+function stageUpdate(dt){
+  if(!RT.stage) return;
+  const def=RT.stage;
+  if(!RT.bossSpawned){
+    const remaining=RT.needKills-(RT.killCount||0);
+    RT._spawnT=(RT._spawnT||0)-dt;
+    if(remaining>0 && ENEMIES.length<Math.min(6,remaining) && RT._spawnT<=0){ RT._spawnT=1.4; spawnWave(def,1); }
+    if((RT.killCount||0)>=RT.needKills){ spawnStageBoss(def); }
+  }
+}
+function stageOnKill(e){
+  if(S.skills && S.skills.soulharvest){ S.mp=Math.min(S.maxMp,S.mp+5); }
+  if(S.location==='hub') return;
+  if(e && e.tag && e.tag.indexOf('stage')===0){ RT.killCount=(RT.killCount||0)+1; updateStageObjective(); }
+}
+function updateStageObjective(){
+  if(!RT.stage||RT.bossSpawned) return;
+  const left=Math.max(0,RT.needKills-(RT.killCount||0));
+  if(left>0) setObjective(RT.stage.task+'   ('+left+' foes remain)');
+  else setObjective('The air curdles — defeat '+RT.stage.boss.name+'!');
+}
+
+/* ===========================================================================
+   STAGE BOSS — generic configurable boss (reuses the boss HP bar)
+=========================================================================== */
+function boltFrom(x,z,tx,tz,dmg,mat,speed){
+  const d=dist2D(x,z,tx,tz)||1, dx=(tx-x)/d, dz=(tz-z)/d; const sp=speed||15;
+  const m=new THREE.Mesh(GEO.sphere, mat||MAT.grief); m.position.set(x+dx*1.5,2.0,z+dz*1.5); m.scale.set(0.7,0.7,0.7); scene.add(m);
+  PROJ.push({mesh:m, vx:dx*sp, vz:dz*sp, life:2.6, dmg:dmg, kind:'grief', boss:true});
+}
+function spawnStageBoss(def){
+  ensureStageAssets();
+  RT.bossSpawned=true;
+  const O=STAGE_ORIGIN;
+  STAGE.mats.bossAccent=new THREE.MeshStandardMaterial({color:def.boss.color||0xff5a5a,emissive:def.boss.color||0xaa3030,emissiveIntensity:0.7,roughness:0.4,metalness:0.2});
+  const bmats=Object.assign({},STAGE.mats,{accent:STAGE.mats.bossAccent,eye:MAT.soul});
+  const g=makeByArch(def.boss.build,bmats,def.boss.scale||2.0,def.boss.weapon);
+  const crown=new THREE.Mesh(new THREE.ConeGeometry(0.5,0.8,6),STAGE.mats.bossAccent); crown.position.set(0,2.2,0); crown.scale.setScalar((def.boss.scale||2)*0.45); g.add(crown);
+  const bx=O.x, bz=O.z+44;
+  g.position.set(bx,0,bz); scene.add(g);
+  const diff=stageDiff(def);
+  RT.sboss={ group:g, x:bx, z:bz, baseY:0, bob:0, hp:def.boss.hp, maxHp:def.boss.hp,
+    dmg:Math.round(15*Math.min(diff,2.2)), atkCd:1.6, slamCd:2.0, specCd:5, special:def.boss.special,
+    name:def.boss.name, arch:def.boss.build, scale:def.boss.scale||2.0, hitFlash:0, slowT:0, slowMul:1,
+    charge:false, chT:0, chdx:0, chdz:0, sumA:false, sumB:false,
+    kind:def.boss.kind||null, kcd:4, ph2:false };
+  showBossBar(def.boss.name);
+  const fill=$('bossFill'); if(fill) fill.style.width='100%';
+  narrate('\u2694  '+def.boss.name+': "'+def.boss.line+'"');
+}
+function bossSummon(b,n){
+  const def=RT.stage; if(!def) return; const diff=stageDiff(def);
+  for(let i=0;i<n;i++){ const c=def.creatures[Math.floor(Math.random()*def.creatures.length)]; spawnCreature(c.arch, b.x+rand(-5,5), b.z+rand(-3,5), {mul:(c.mul||1)*0.9,diff:diff,name:c.name,scale:c.scale||1,tag:'stageMinion',weapon:c.weapon,ranged:c.ranged,boom:c.boom,deathHazard:c.deathHazard}); }
+  narrate(b.name+' calls more of the dead onto the field.');
+}
+function doBossSpecial(b,px,pz,d){
+  const sp=b.special;
+  if(sp==='volley'){ b.specCd=6; const base=Math.atan2(px-b.x,pz-b.z); for(let i=-1;i<=1;i++){ const a=base+i*0.32; boltFrom(b.x,b.z,b.x+Math.sin(a)*20,b.z+Math.cos(a)*20,b.dmg,MAT.grief); } narrate(b.name+' looses a fan of spirit-fire.'); }
+  else if(sp==='charge'){ if(d>5){ b.specCd=7; b.charge=true; b.chT=0.9; const dd=dist2D(b.x,b.z,px,pz)||1; b.chdx=(px-b.x)/dd; b.chdz=(pz-b.z)/dd; spawnRing(b.x,b.z,0xff8060,5); } else { b.specCd=2; } }
+  else if(sp==='aoe'){ b.specCd=7; spawnRing(b.x,b.z,0xff5020,12); spawnFlash(b.x,1.5,b.z,0xff6020,2.2); if(d<8) damagePlayer(b.dmg+4); narrate(b.name+' erupts \u2014 the very ground burns.'); }
+  else { b.specCd=6; bossSummon(b,2); }
+}
+function updateStageBoss(dt){
+  const b=RT.sboss; if(!b) return;
+  b.bob+=dt*2.2; b.baseY=Math.sin(b.bob)*0.12;
+  if(b.atkCd>0) b.atkCd-=dt;
+  if(b.slamCd>0) b.slamCd-=dt;
+  if(b.specCd>0) b.specCd-=dt;
+  if(b.slowT>0){ b.slowT-=dt; if(b.slowT<=0) b.slowMul=1; }
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  const d=dist2D(b.x,b.z,px,pz)||1, dx=(px-b.x)/d, dz=(pz-b.z)/d;
+  b.group.rotation.y=Math.atan2(dx,dz);
+  if(b.charge){
+    const cs=9*b.slowMul*dt; b.x+=b.chdx*cs; b.z+=b.chdz*cs; b.chT-=dt;
+    if(d<3){ damagePlayer(b.dmg+6); spawnRing(px,pz,0xff8060,7); b.charge=false; }
+    if(b.chT<=0) b.charge=false;
+  } else if(d>4){ const spd=3.4*b.slowMul*dt; b.x+=dx*spd; b.z+=dz*spd; }
+  if(!b.charge && d<4.5 && b.slamCd<=0){ b.slamCd=2.6; spawnRing(b.x,b.z,(b.special==='aoe')?0xff7030:0x88c0ff,7.5); if(d<5.5) damagePlayer(b.dmg); }
+  if(!b.charge && d>3 && b.atkCd<=0){ b.atkCd=2.4; boltFrom(b.x,b.z,px,pz,b.dmg,(b.special==='aoe')?MAT.ember:MAT.grief); }
+  if(b.specCd<=0) doBossSpecial(b,px,pz,d);
+  if(b.kcd>0) b.kcd-=dt;
+  if(b.kind && typeof bossKindTick==='function') bossKindTick(b,dt,px,pz,d);
+  if(!b.sumA && b.hp<b.maxHp*0.6){ b.sumA=true; bossSummon(b,2); }
+  if(!b.sumB && b.hp<b.maxHp*0.3){ b.sumB=true; bossSummon(b,3); }
+  b.group.position.set(b.x,b.baseY,b.z);
+  const O=STAGE_ORIGIN; b.x=clamp(b.x,O.x-54,O.x+54); b.z=clamp(b.z,O.z-54,O.z+54);
+  const fill=$('bossFill'); if(fill) fill.style.width=clamp(b.hp/b.maxHp*100,0,100)+'%';
+}
+function damageStageBoss(n){
+  const b=RT.sboss; if(!b) return;
+  b.hp-=n; b.hitFlash=0.1; spawnFlash(b.x,2.4,b.z,0xff6a6a,0.5);
+  const fill=$('bossFill'); if(fill) fill.style.width=clamp(b.hp/b.maxHp*100,0,100)+'%';
+  if(b.hp<=0) stageBossDefeated();
+}
+function stageBossDefeated(){
+  const b=RT.sboss; if(!b) return;
+  setNecroIfStronger(b.arch, b.maxHp, b.name, b.scale);
+  spawnFlash(b.x,2.2,b.z,0xffe2a0,2.4); spawnRing(b.x,b.z,0xffe2a0,10);
+  scene.remove(b.group); RT.sboss=null; hideBossBar();
+  const def=RT.stage;
+  if(typeof addGold==='function') addGold(def.reward.gold); else { S.gold+=def.reward.gold; updateHUD(); }
+  if(!S.chaptersCleared) S.chaptersCleared={};
+  S.chaptersCleared[def.id]=true;
+  if(def.next){ if(!S.chaptersUnlocked) S.chaptersUnlocked={}; S.chaptersUnlocked[def.next]=true; }
+  narrate('\u2726  '+def.boss.name+' is undone. '+def.clear);
+  narrate('You take '+def.reward.gold+' gold from the wreck of the chapter.');
+  var freed=false;
+  if(def.rescue && typeof freeCaptive==='function'){ freed=freeCaptive(def); }
+  setObjective(freed ? 'Chapter cleared \u2014 a soul freed. Returning to Carrowgate...' : 'Chapter cleared! Returning to Carrowgate...');
+  saveGame();
+  setTimeout(function(){ if(S.location===def.id) returnToHub(false); }, freed?7000:4600);
+}
+
+/* ===========================================================================
+   NECROMANCY — raise the strongest foe you have slain (TRIPLE its health)
+=========================================================================== */
+function setNecroIfStronger(arch,maxHp,name,scale){
+  if(!maxHp) return;
+  if(!S.necroTemplate || maxHp > S.necroTemplate.maxHp){
+    S.necroTemplate={arch:arch||'wraith',maxHp:maxHp,name:name||'thrall',scale:scale||1};
+    if(S.skills && S.skills.necromancy) narrate('The Grimoire stirs: '+(name||'that foe')+' is now the strongest spirit you could raise.');
+  }
+}
+function trackNecro(e){ if(e) setNecroIfStronger(e.arch, e.maxHp, e.cname, e.cscale); }
+
+let ALLY=null, _allyTag=null;
+function allyTagEl(){
+  if(!_allyTag){ _allyTag=document.createElement('div');
+    _allyTag.style.cssText='position:absolute;left:12px;bottom:150px;z-index:30;font:600 12px/1.35 system-ui,Arial;color:#ffe6a0;background:rgba(20,10,30,.72);padding:5px 9px;border:1px solid #6a4a8a;border-radius:8px;pointer-events:none;display:none;text-shadow:0 1px 2px #000;min-width:120px;';
+    document.body.appendChild(_allyTag); }
+  return _allyTag;
+}
+function despawnAlly(){ if(ALLY){ scene.remove(ALLY.group); ALLY=null; } if(_allyTag) _allyTag.style.display='none'; }
+function castRaise(){
+  if(RT.inDialogue||RT.paused) return;
+  if(!S.skills||!S.skills.necromancy){ narrate('You have not learned Necromancy. Study the Black Grimoire (speak with Maren).'); return; }
+  if(!S.necroTemplate){ narrate('You have slain nothing worth raising. Defeat a worthy foe first.'); return; }
+  if((RT.raiseCd||0)>0){ narrate('The Weave is not yet ready to be torn again.'); return; }
+  const cost=35; if(S.mp<cost){ flashBar('mp'); return; }
+  S.mp-=cost; updateHUD(); RT.raiseCd=8;
+  despawnAlly(); ensureStageAssets();
+  const t=S.necroTemplate;
+  const g=makeByArch(t.arch, ALLYMATS, t.scale||1);
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  const ax=px+Math.sin(PLAYER.angle)*2.2, az=pz+Math.cos(PLAYER.angle)*2.2;
+  g.position.set(ax,0,az); scene.add(g);
+  const base=ARCH_BASE[t.arch]||ARCH_BASE.wraith;
+  ALLY={ group:g, x:ax, z:az, baseY:0, bob:Math.random()*6, hp:t.maxHp*3, maxHp:t.maxHp*3,
+    dmg:Math.max(14,Math.round(t.maxHp*0.22)), atkCd:0, hoverY:base.hover, name:t.name };
+  spawnRing(ax,az,0xc080ff,6); spawnFlash(ax,1.4,az,0xc080ff,1.4);
+  narrate('You raise '+t.name+' \u2014 it claws up from nothing to stand at your side, with '+(t.maxHp*3)+' hp. Bound to your will.');
+  allyTagEl().style.display='block';
+  RT.weaveOpen=false; var ww=$('weaveWheel'); if(ww) ww.classList.remove('open');
+}
+function updateAlly(dt){
+  if((RT.raiseCd||0)>0) RT.raiseCd-=dt;
+  const a=ALLY; if(!a) return;
+  a.bob+=dt*3; a.baseY=Math.sin(a.bob)*0.07+0.05;
+  if(a.atkCd>0) a.atkCd-=dt;
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  let tgt=null, td=22;
+  for(const e of ENEMIES){ if(e.dead) continue; const dd=dist2D(a.x,a.z,e.x,e.z); if(dd<td){ td=dd; tgt={k:'e',o:e}; } }
+  if(RT.sboss){ const dd=dist2D(a.x,a.z,RT.sboss.x,RT.sboss.z); if(dd<td){ td=dd; tgt={k:'sb'}; } }
+  if(RT.boss){ const dd=dist2D(a.x,a.z,RT.boss.x,RT.boss.z); if(dd<td){ td=dd; tgt={k:'b'}; } }
+  let tx,tz;
+  if(tgt){ if(tgt.k==='e'){ tx=tgt.o.x; tz=tgt.o.z; } else if(tgt.k==='sb'){ tx=RT.sboss.x; tz=RT.sboss.z; } else { tx=RT.boss.x; tz=RT.boss.z; } }
+  else { tx=px+1.6; tz=pz-1.4; }
+  const d=dist2D(a.x,a.z,tx,tz)||1, dx=(tx-a.x)/d, dz=(tz-a.z)/d;
+  const sp=4.2*dt;
+  if(d>(tgt?2.2:2.0)){ a.x+=dx*sp; a.z+=dz*sp; }
+  a.group.rotation.y=Math.atan2(dx,dz);
+  if(tgt && d<2.7 && a.atkCd<=0){
+    a.atkCd=1.0;
+    if(tgt.k==='e'){ const en=tgt.o; damageEnemy(en,a.dmg); if(!en.dead) a.hp-=en.dmg*0.5; }
+    else if(tgt.k==='sb'){ damageStageBoss(a.dmg); a.hp-=(RT.sboss?RT.sboss.dmg*0.4:6); }
+    else { damageBoss(a.dmg); a.hp-=(RT.boss?RT.boss.dmg*0.4:6); }
+    spawnFlash(tx,1.2,tz,0xc080ff,0.5);
+    if(a.hp<=0){ despawnAlly(); narrate('Your thrall is hewn apart and crumbles back to dust.'); return; }
+  }
+  a.group.position.set(a.x,(a.hoverY||0)+a.baseY,a.z);
+  const B=RT.bounds; if(B){ a.x=clamp(a.x,B.minX+1,B.maxX-1); a.z=clamp(a.z,B.minZ+1,B.maxZ-1); }
+  if(_allyTag){ const pct=clamp(a.hp/a.maxHp*100,0,100);
+    _allyTag.innerHTML='\uD83D\uDC80 '+a.name+' &nbsp;'+Math.max(0,Math.round(a.hp))+'/'+a.maxHp+
+      '<div style="height:5px;margin-top:3px;background:#3a1a4a;border-radius:3px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,#c080ff,#ffd060)"></div></div>'; }
+}
+
+/* ===========================================================================
+   SKILLS — the Black Grimoire (purchasable abilities)
+=========================================================================== */
+const SKILLS=[
+  {id:'necromancy',name:'Necromancy',cost:200,icon:'\uD83D\uDC80',desc:'Unlocks the Raise spell (\uD83D\uDC80 / key 4). Summon the strongest foe you have slain as a thrall with TRIPLE its original health. It fights at your side until destroyed.'},
+  {id:'soulharvest',name:'Soul Harvest',cost:120,icon:'\u2726',desc:'Every felled enemy returns a little spirit (MP) to you.'},
+  {id:'ironhide',name:'Ironhide',cost:160,icon:'\uD83D\uDEE1',desc:'Take 15% less damage from every source.'},
+];
+function openSkills(){
+  let rows='';
+  for(const sk of SKILLS){
+    const owned=S.skills&&S.skills[sk.id];
+    const can=!owned && S.gold>=sk.cost;
+    rows+='<div class="codexItem"><div class="info"><b>'+sk.icon+' '+sk.name+'</b><small>'+sk.desc+'</small></div>'+
+      (owned?'<span style="color:#9ad6a0;font-weight:700;white-space:nowrap">Learned</span>'
+            :'<button class="btn" style="width:auto;padding:7px 12px;font-size:12px'+(can?'':';opacity:.55')+'" data-sk="'+sk.id+'">'+sk.cost+'g</button>')+'</div>';
+  }
+  const html='<h2>The Black Grimoire</h2><div class="psub">Maren\'s forbidden lessons \u00b7 '+S.gold+'g</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;max-height:56vh;overflow:auto">'+rows+'</div>'+
+    '<div class="close">\u2715</div>';
+  openModal(html);
+  document.querySelectorAll('[data-sk]').forEach(function(b){ b.onclick=function(){ buySkill(b.getAttribute('data-sk')); }; });
+}
+function buySkill(id){
+  const sk=SKILLS.find(function(s){ return s.id===id; }); if(!sk) return;
+  if(S.skills&&S.skills[id]) return;
+  if(S.gold<sk.cost){ narrate('Not enough gold for that lesson.'); return; }
+  S.gold-=sk.cost; if(!S.skills) S.skills={}; S.skills[id]=true; updateHUD(); saveGame();
+  if(id==='necromancy') narrate('You learn Necromancy. A new sigil burns on the Weave-wheel: Raise (\uD83D\uDC80, or key 4). Death is now a door you can open.');
+  else narrate('You learn '+sk.name+'.');
+  openSkills();
+}
+
+/* ===========================================================================
+   WORLD MAP — the Waystone's chapter select
+=========================================================================== */
+function openWorldMap(){
+  if(S.flags.metBriar){ if(!S.chaptersUnlocked) S.chaptersUnlocked={}; if(!S.chaptersUnlocked.ch1) S.chaptersUnlocked.ch1=true; }
+  let rows='';
+  for(const st of STAGES){
+    const cleared=S.chaptersCleared&&S.chaptersCleared[st.id];
+    const unlocked=S.chaptersUnlocked&&S.chaptersUnlocked[st.id];
+    const status=cleared?'<span style="color:#9ad6a0">\u2713 cleared</span>':(unlocked?'<span style="color:#ffd070">open</span>':'<span style="color:#777">locked</span>');
+    rows+='<div class="codexItem"><div class="info"><b>'+st.num+'. '+st.name+'</b><small>'+st.year+' \u00b7 '+st.teaser+'  \u2014  '+status+'</small></div>'+
+      (unlocked?'<button class="btn" style="width:auto;padding:7px 12px;font-size:12px" data-go="'+st.id+'">'+(cleared?'Revisit':'Travel')+'</button>':'<span style="color:#555">\u2014</span>')+'</div>';
+  }
+  const beaconReady=S.chaptersCleared&&S.chaptersCleared.ch12;
+  rows+='<div class="codexItem"><div class="info"><b>13. The Beacon</b><small>The Drowned Light \u00b7 '+(beaconReady?'The road north has opened \u2014 walk there from the square.':'Sealed until the twelve chapters are laid to rest.')+'</small></div><span style="color:#666;white-space:nowrap">'+(beaconReady?'\u2191 road':'locked')+'</span></div>';
+  const html='<h2>The Waystone</h2><div class="psub">England\'s haunted century \u00b7 choose a chapter</div>'+
+    '<div style="display:flex;flex-direction:column;gap:7px;margin-top:10px;max-height:56vh;overflow:auto">'+rows+'</div>'+
+    '<div class="close">\u2715</div>';
+  openModal(html);
+  document.querySelectorAll('[data-go]').forEach(function(b){ b.onclick=function(){ travelTo(b.getAttribute('data-go')); }; });
+}
+function travelTo(id){ if(typeof closeModal==='function') closeModal(); enterStage(id); }
+
+
+/* ===== PHASE 2 (spliced) ===== */
+/* ===========================================================================
+   THE BEACON — PHASE 2  (chapters 5–9 deepened)
+   ranged foes · ground hazards · death-booms · the serpentine eel ·
+   five bespoke boss mechanics · hero set-pieces · the rescue of Corvin Sable
+=========================================================================== */
+
+/* ---- ground hazard zones (fire / plague / tidal surge) ---- */
+const HAZARDS=[];
+function spawnHazard(x,z,r,life,type){
+  if(HAZARDS.length>42) return;
+  const color = type==='fire'?0xff4a18 : type==='plague'?0x7aa84a : type==='surge'?0x66b0d0 : 0x88c0ff;
+  const mat=new THREE.MeshBasicMaterial({color:color,transparent:true,opacity:0.40,depthWrite:false});
+  const m=new THREE.Mesh(GEO.plane,mat); m.rotation.x=-Math.PI/2; m.scale.set(r*2,r*2,1); m.position.set(x,0.07,z); scene.add(m);
+  HAZARDS.push({mesh:m,mat:mat,x:x,z:z,r:r,life:life,maxLife:life,type:type,tick:0});
+}
+function clearHazards(){ for(const h of HAZARDS){ scene.remove(h.mesh); if(h.mat&&h.mat.dispose) h.mat.dispose(); } HAZARDS.length=0; }
+function updateHazards(dt){
+  if(!HAZARDS.length) return;
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  for(let i=HAZARDS.length-1;i>=0;i--){ const h=HAZARDS[i];
+    h.life-=dt; h.tick-=dt;
+    h.mat.opacity=clamp(0.40*(h.life/h.maxLife)+0.06,0.05,0.5);
+    if(dist2D(px,pz,h.x,h.z)<h.r && h.tick<=0){ h.tick=0.5; damagePlayer(h.type==='fire'?7:h.type==='surge'?9:5); }
+    if(h.life<=0){ scene.remove(h.mesh); if(h.mat&&h.mat.dispose) h.mat.dispose(); HAZARDS.splice(i,1); }
+  }
+}
+
+/* ---- on-death effects: explosions + lingering pools ---- */
+function doDeathBoom(e){
+  if(!e) return;
+  if(e.boom){
+    spawnFlash(e.x,1.0,e.z,0xff7030,1.6); spawnRing(e.x,e.z,0xff5020,4.5);
+    if(dist2D(e.x,e.z,PLAYER.group.position.x,PLAYER.group.position.z)<3.2) damagePlayer(10);
+    spawnHazard(e.x,e.z,2.2,3.2,'fire');
+  }
+  if(e.deathHazard) spawnHazard(e.x,e.z,2.0,5,e.deathHazard);
+}
+
+/* ---- the serpentine eel (Wreckers' Cove) ---- */
+function makeEel(mats,scale){
+  ensureStageAssets();
+  const g=new THREE.Group(); const b=mats.ghost||mats.body;
+  const head=new THREE.Mesh(PART.head,b); head.position.set(0,0.6,0.7); head.scale.set(0.85,0.7,1.15); head.castShadow=false; g.add(head);
+  const jaw=new THREE.Mesh(SG.snout,b); jaw.position.set(0,0.5,1.2); jaw.rotation.x=Math.PI/2; jaw.castShadow=false; g.add(jaw);
+  const eL=new THREE.Mesh(PART.eye,mats.eye); eL.position.set(-0.14,0.74,1.0); g.add(eL);
+  const eR=new THREE.Mesh(PART.eye,mats.eye); eR.position.set(0.14,0.74,1.0); g.add(eR);
+  const segs=[];
+  for(let i=0;i<7;i++){ const s=new THREE.Mesh(GEO.sphere,b); const t=i/7; s.scale.setScalar(0.55*(1-t*0.55)); s.position.set(0,0.55,0.3-i*0.5); s.castShadow=false; g.add(s); segs.push(s); }
+  g.userData.segs=segs;
+  g.scale.setScalar(scale||1); return g;
+}
+function eelAnim(e,dt){
+  const segs=e.group.userData&&e.group.userData.segs; if(!segs) return;
+  for(let i=0;i<segs.length;i++){ segs[i].position.x=Math.sin(e.bob*2.2+i*0.8)*0.16*(i+1); }
+}
+
+/* ---- bespoke boss mechanics (chapters 5–9) ---- */
+function bossKindTick(b,dt,px,pz,d){
+  if(b.kind==='headsman'){
+    if(b.kcd<=0 && d<11){ b.kcd=5.5;
+      const fx=Math.sin(b.group.rotation.y), fz=Math.cos(b.group.rotation.y);
+      spawnRing(b.x+fx*3,b.z+fz*3,0xff2020,3.5);
+      narrate(b.name+' raises the axe \u2014 move aside!');
+      setTimeout(function(){ if(RT.sboss!==b) return;
+        const cx=b.x+fx*3.2, cz=b.z+fz*3.2, ppx=PLAYER.group.position.x, ppz=PLAYER.group.position.z;
+        spawnFlash(cx,1.2,cz,0xffffff,1.6); spawnRing(cx,cz,0xff4040,4.6);
+        if(dist2D(ppx,ppz,cx,cz)<4.2) damagePlayer(b.dmg+10);
+      },650);
+    }
+  } else if(b.kind==='doctor'){
+    if(b.kcd<=0){ b.kcd=4.0; spawnHazard(px,pz,2.6,5.5,'plague'); narrate(b.name+' flings a vial of pestilence at your feet.'); }
+  } else if(b.kind==='cinder'){
+    b._tr=(b._tr||0)-dt; if(b._tr<=0){ b._tr=0.35; spawnHazard(b.x,b.z,1.7,2.6,'fire'); }
+    if(b.kcd<=0 && d<13){ b.kcd=6.5;
+      spawnRing(b.x,b.z,0xff5020,12); spawnFlash(b.x,1.6,b.z,0xff6020,2.2);
+      for(let a=0;a<8;a++){ const an=a/8*Math.PI*2; spawnHazard(b.x+Math.cos(an)*5,b.z+Math.sin(an)*5,1.8,3.0,'fire'); }
+      if(d<8) damagePlayer(b.dmg); narrate(b.name+' breathes out, and the world ignites.');
+    }
+  } else if(b.kind==='gallow'){
+    if(b.kcd<=0){ b.kcd=7.0;
+      const dx=(px-b.x)/(d||1), dz=(pz-b.z)/(d||1);
+      for(let s=1;s<=6;s++) spawnHazard(b.x+dx*s*3, b.z+dz*s*3, 2.0, 2.4, 'surge');
+      narrate(b.name+' calls a black wave off the rocks.'); bossSummon(b,1);
+    }
+  } else if(b.kind==='warden'){
+    if(b.kcd<=0 && d<16){ b.kcd=8.0;
+      RT.rootT=1.3; spawnRing(px,pz,0x9090a0,3.5); spawnFlash(px,1.0,pz,0xc0c0d0,0.8);
+      narrate(b.name+' hurls iron \u2014 shackles bite, and you are held fast!');
+      bossSummon(b,2);
+    }
+  }
+}
+
+/* ---- hero set-pieces (one authored landmark per chapter) ---- */
+function buildSetpiece(kind,x,z){
+  const stone=MAT.stone, wood=MAT.darkwood, wood2=MAT.wood;
+  const dark=new THREE.MeshStandardMaterial({color:0x16160f,roughness:0.92}); STAGE.mats.spDark=dark;
+  const solid=(sx,sz,r)=>STAGE.obstacles.push({x:sx,z:sz,r:r});
+  if(kind==='scaffold'){
+    const plat=new THREE.Mesh(new THREE.BoxGeometry(7,0.6,7),wood); plat.position.set(x,0.8,z); plat.castShadow=true; plat.receiveShadow=true; sAdd(plat);
+    for(const c of [[-3,-3],[3,-3],[-3,3],[3,3]]){ const leg=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.8,0.4),wood); leg.position.set(x+c[0],0.4,z+c[1]); sAdd(leg); }
+    const block=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.7,0.6),wood2); block.position.set(x,1.45,z); block.castShadow=true; sAdd(block);
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.3,3.0,0.3),wood); post.position.set(x+2.6,2.4,z); sAdd(post);
+    const drape=new THREE.Mesh(new THREE.BoxGeometry(7.2,1.4,0.12),dark); drape.position.set(x,1.2,z+3.5); sAdd(drape);
+    solid(x,z,3.4);
+  } else if(kind==='pyre'){
+    const stack=new THREE.Mesh(new THREE.BoxGeometry(3.2,1.2,2.2),wood); stack.position.set(x,0.6,z); stack.castShadow=true; sAdd(stack);
+    for(let i=0;i<5;i++){ const log=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,3.2,7),wood2); log.rotation.z=Math.PI/2; log.position.set(x,0.3+i*0.16,z-0.8+i*0.35); sAdd(log); }
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,2.4,7),new THREE.MeshStandardMaterial({color:0xb9c2c0,roughness:0.85})); body.rotation.z=Math.PI/2; body.position.set(x,1.4,z); sAdd(body);
+    const f=new THREE.Mesh(PART.head,MAT.ember); f.position.set(x,1.9,z); f.scale.set(1.4,1.6,1.0); sAdd(f);
+    const l=new THREE.PointLight(0xff7030,1.1,12); l.position.set(x,2.2,z); sAdd(l); solid(x,z,2.2);
+  } else if(kind==='burnframe'){
+    for(const c of [[-3.5,-3],[3.5,-3],[-3.5,3],[3.5,3]]){ const beam=new THREE.Mesh(new THREE.BoxGeometry(0.4,5.0,0.4),dark); beam.position.set(x+c[0],2.5,z+c[1]); beam.castShadow=true; sAdd(beam); solid(x+c[0],z+c[1],0.5); }
+    const ridge=new THREE.Mesh(new THREE.BoxGeometry(8.0,0.4,0.4),dark); ridge.position.set(x,5.0,z); sAdd(ridge);
+    const cross=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,7.0),dark); cross.position.set(x,4.6,z); sAdd(cross);
+    for(let i=0;i<4;i++){ const f=new THREE.Mesh(PART.head,MAT.ember); const fx=x+rand(-3,3), fz=z+rand(-3,3); f.position.set(fx,0.6,fz); f.scale.set(0.7,0.9,0.7); sAdd(f); const l=new THREE.PointLight(0xff5020,0.6,7); l.position.set(fx,1.1,fz); sAdd(l); }
+  } else if(kind==='shiphull'){
+    const hull=new THREE.Mesh(new THREE.CylinderGeometry(2.2,1.4,9,10,1,true),new THREE.MeshStandardMaterial({color:0x3a2c1e,roughness:0.9,side:THREE.DoubleSide})); hull.rotation.set(Math.PI/2,0,0.25); hull.position.set(x,1.6,z); hull.castShadow=true; sAdd(hull); solid(x,z,2.8);
+    const mast=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.22,7,8),wood); mast.rotation.z=0.5; mast.position.set(x+1.5,3.2,z); sAdd(mast);
+    const sail=new THREE.Mesh(new THREE.BoxGeometry(0.1,2.4,2.6),new THREE.MeshStandardMaterial({color:0x9a9486,roughness:0.95,transparent:true,opacity:0.7,side:THREE.DoubleSide})); sail.position.set(x+2.4,3.4,z); sail.rotation.z=0.5; sAdd(sail);
+    const lantern=new THREE.Mesh(PART.head,MAT.ember); lantern.position.set(x+3.2,4.4,z); lantern.scale.setScalar(0.4); sAdd(lantern); const l=new THREE.PointLight(0xffb060,0.9,9); l.position.set(x+3.2,4.4,z); sAdd(l);
+  } else if(kind==='cageblock'){
+    const dais=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.8,0.5,10),stone); dais.position.set(x,0.25,z); dais.receiveShadow=true; dais.castShadow=true; sAdd(dais);
+    const cageMat=new THREE.MeshStandardMaterial({color:0x55585f,roughness:0.4,metalness:0.7}); STAGE.mats.cageMat=cageMat;
+    STAGE._cageBars=[];
+    for(let a=0;a<10;a++){ const an=a/10*Math.PI*2; const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,3.0,6),cageMat); bar.position.set(x+Math.cos(an)*1.5,2.0,z+Math.sin(an)*1.5); sAdd(bar); STAGE._cageBars.push(bar); }
+    const top=new THREE.Mesh(new THREE.TorusGeometry(1.5,0.1,6,16),cageMat); top.rotation.x=Math.PI/2; top.position.set(x,3.5,z); sAdd(top);
+    solid(x,z,2.0);
+  }
+}
+
+/* ---- the rescue: Corvin Sable in Bedlam ---- */
+function buildCaptive(def,x,z){
+  if(!def.rescue) return;
+  if(S.flags && S.flags.freedCorvin){ RT.captive=null; return; }
+  const H=makeHuman({skin:0xc8b89a,shirt:0x3a4a6a,pants:0x222a3a,hair:0x6a5a3a,shoe:0x1a1a22});
+  H.group.position.set(x,0,z); H.group.scale.setScalar(0.96); scene.add(H.group);
+  STAGE.objs.push(H.group);
+  RT.captive={group:H.group,x:x,z:z,name:def.rescue.name,boon:def.rescue.boon,freed:false};
+}
+function freeCaptive(def){
+  if(!def.rescue) return false;
+  if(S.flags && S.flags.freedCorvin) return false;
+  if(STAGE._cageBars){ for(const bar of STAGE._cageBars){ scene.remove(bar); } STAGE._cageBars=[]; }
+  S.flags=S.flags||{}; S.flags.freedCorvin=true;
+  if(def.rescue.boon==='mp'){ S.maxMp+=20; S.mp=S.maxMp; }
+  if(typeof updateHUD==='function') updateHUD();
+  if(RT.captive){ spawnRing(RT.captive.x,RT.captive.z,0xc0d0ff,5); spawnFlash(RT.captive.x,1.6,RT.captive.z,0xc0d0ff,1.7); }
+  narrate('The cage falls open. '+def.rescue.name+', the exiled star-reader, steps free \u2014 blinking at a sky he had given up on.');
+  setTimeout(function(){ narrate('"You came. After all this time \u2014 you came. Take this, friend: the old sight. The Weave will run deeper in you now." (+20 max Spirit)'); },2600);
+  if(typeof unlockLore==='function') unlockLore('corvin');
+  return true;
+}
+
+/* ---- patch chapters 5–9 with the new bespoke content ---- */
+function applyPhase2Data(){
+  const set=function(id,patch){ const s=stageById(id); if(s) Object.assign(s,patch); };
+  const setBoss=function(id,patch){ const s=stageById(id); if(s) Object.assign(s.boss,patch); };
+  const markCreature=function(id,name,patch){ const s=stageById(id); if(s){ for(const c of s.creatures){ if(c.name===name) Object.assign(c,patch); } } };
+
+  if(typeof ARCH_BASE!=='undefined') ARCH_BASE.eel={hp:54,spd:4.2,dmg:11,hover:0};
+
+  // ch4 Edgemoor — musket-shades gain ranged fire (a taste of what's to come)
+  markCreature('ch4','musket-shade',{ranged:true});
+
+  // ch5 Whitehall — the scaffold + a telegraphed execution cleave
+  set('ch5',{setpiece:'scaffold'}); setBoss('ch5',{kind:'headsman'});
+
+  // ch6 Plaguefall — plague-cart pyre, boil-walkers leave pools, doctor seeds plague
+  set('ch6',{setpiece:'pyre'}); setBoss('ch6',{kind:'doctor'});
+  markCreature('ch6','boil-walker',{deathHazard:'plague'});
+
+  // ch7 The Burning — burning house-frame, ember-imps explode, Cinder-King trails fire
+  set('ch7',{setpiece:'burnframe'}); setBoss('ch7',{kind:'cinder'});
+  markCreature('ch7','ember-imp',{boom:true});
+
+  // ch8 Wreckers' Cove — wrecked hull, the cove-eel becomes a true serpent, tidal surges
+  set('ch8',{setpiece:'shiphull'}); setBoss('ch8',{kind:'gallow'});
+  markCreature('ch8','cove-eel',{arch:'eel'});
+
+  // ch9 Bedlam — central cage-block, shackle-roots, and the rescue of Corvin Sable
+  set('ch9',{setpiece:'cageblock', rescue:{name:'Corvin Sable', boon:'mp'}});
+  setBoss('ch9',{kind:'warden'});
+
+  // codex entry for the rescued astronomer
+  if(typeof CODEX_LORE!=='undefined'){
+    CODEX_LORE.push({ id:'corvin', cat:'Companions', title:'Corvin Sable',
+      text:'An astronomer who read forbidden things in the stars and was shut in Bedlam for sanity\u2019s sake \u2014 the keepers\u2019, not his. Freed from his cage, he gifts you the old sight: the Weave runs deeper in you, and your spirit is the greater for it.' });
+  }
+}
+applyPhase2Data();
+
 </script>
 </body>
 </html>
