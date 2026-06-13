@@ -1021,7 +1021,8 @@ const DOG = { group:null, barkT:0, lungeT:0, x:0, z:0 };
 function buildDog(){
   const g = new THREE.Group();
   const A=function(c,glow){ return (typeof alebrijeMat==='function')?alebrijeMat(c,(glow===undefined?0.22:glow)):new THREE.MeshStandardMaterial({color:c,roughness:0.6}); };
-  const cBody=A(0x00e5ff,0.20), cChest=A(0xff2d95,0.28), cHaunch=A(0x76ff03,0.24), cSnout=A(0xff6d00,0.26), cLeg=A(0x9b30ff,0.26), cTail=A(0xffea00,0.30), cNose=A(0xff1744,0.32);
+  const P=function(k,b,c1,c2){ return (typeof aleStdMat==='function')? aleStdMat(k,b,c1,c2,{rep:1,glow:0.26}) : A(b); };
+  const cBody=P('dots',0x00e5ff,0xff2d95,0xffea00), cChest=P('zig',0xff2d95,0xffea00,0x00e5ff), cHaunch=P('scales',0x76ff03,0xff6d00,0x9b30ff), cSnout=A(0xff6d00,0.26), cLeg=P('diamond',0x9b30ff,0x00e5ff,0xffea00), cTail=P('stripes',0xffea00,0xff2d95,0x00e5ff), cNose=A(0xff1744,0.32);
   const cEye=new THREE.MeshStandardMaterial({color:0xffea00,emissive:0xffea00,emissiveIntensity:1.1,roughness:0.3});
   const mk=(geo,mat,x,y,z,rx,rz)=>{ const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; m.castShadow=true; m.receiveShadow=true; g.add(m); return m; };
   mk(new THREE.CylinderGeometry(0.24,0.21,0.78,14), cBody, 0,0.5,0, Math.PI/2);   // barrel body
@@ -1039,6 +1040,16 @@ function buildDog(){
   const dogLeg=(x,z)=>{ const p=new THREE.Group(); p.position.set(x,0.42,z); const l=new THREE.Mesh(legGeo,cLeg); l.position.set(0,-0.21,0); l.castShadow=true; p.add(l); g.add(p); DOG.legs.push(p); return p; };
   dogLeg(-0.15,0.26); dogLeg(0.15,0.26); dogLeg(-0.15,-0.28); dogLeg(0.15,-0.28);
   const tail = mk(new THREE.CylinderGeometry(0.05,0.03,0.36,8), cTail, 0,0.64,-0.56, -0.7);
+  // little alebrije wing-fans
+  if(typeof aleStdMat==='function'){
+    const wmD=[ aleStdMat('feather',0xff2d95,0xffea00,0x00e5ff,{rep:1,glow:0.3}),
+                aleStdMat('stripes',0x00e5ff,0xffea00,0xff2d95,{rep:1,glow:0.3}) ];
+    const mkW=function(side){ const Wg=new THREE.Group();
+      for(let i=0;i<3;i++){ const L=0.30+0.10*i; const s=new THREE.Group(); s.rotation.z=side*(0.25+i*0.30);
+        const me=new THREE.Mesh(new THREE.BoxGeometry(0.07,L,0.03),wmD[i%2]); me.position.y=L/2; me.castShadow=true; s.add(me); Wg.add(s); }
+      Wg.position.set(side*0.16,0.72,-0.10); Wg.rotation.x=-0.55; Wg.rotation.y=side*0.2; g.add(Wg); return Wg; };
+    DOG.wings={L:mkW(1),R:mkW(-1),t:0};
+  }
   DOG.tail = tail;
   g.position.set(2,0,-2.5);
   g.visible = false;       // joins after quest 2
@@ -1616,6 +1627,7 @@ function updateEnemies(dt){
     const e=ENEMIES[i]; if(e.dead) continue;
     e.bob+=dt*3; e.baseY=Math.sin(e.bob)*0.08+0.05;
     if(e.slowT>0){ e.slowT-=dt; if(e.slowT<=0) e.slowMul=1; }
+    if((e.hexT||0)>0){ e.hexT-=dt; e.hexTick=(e.hexTick||0)-dt; if(e.hexTick<=0){ e.hexTick=0.7; damageEnemy(e,e.hexDmg||5); spawnFlash(e.x,1.3,e.z,0xaa00ff,0.4); } }
     if(e.atkCd>0) e.atkCd-=dt;
     if(e.atkAnim>0) e.atkAnim-=dt;
     if(e.hitFlash>0){ e.hitFlash-=dt; e.group.scale.setScalar((e.group.children?1:1)); }
@@ -1633,11 +1645,15 @@ function updateEnemies(dt){
       boltFrom(e.x,e.z,px,pz, Math.max(6,Math.round(e.dmg*0.9)), STAGE.mats.bossAccent||MAT.grief, 11);
       spawnFlash(e.x,1.4,e.z,0xbfd0ff,0.3);
     }
+    if(e.lunger){
+      e.lungeCd=(e.lungeCd||0)-dt; if((e.lungeT||0)>0) e.lungeT-=dt;
+      if(e.lungeCd<=0 && d>3.5 && d<11 && d<aggro){ e.lungeT=0.45; e.lungeCd=3.2+Math.random()*2; e.atkAnim=0.45; spawnFlash(e.x,1.2,e.z,0xffd0a0,0.4); }
+    }
     if(d<aggro){
       // chase
       const dx=(px-e.x)/d, dz=(pz-e.z)/d;
       if(d>standoff){
-        const sp=e.speed*e.slowMul*dt;
+        const sp=e.speed*e.slowMul*dt*(((e.lungeT||0)>0)?3.1:1);
         e.x+=dx*sp; e.z+=dz*sp;
       } else if(e.ranged && d<6.5){
         // back away to keep range
@@ -1645,8 +1661,10 @@ function updateEnemies(dt){
       }
       e.group.rotation.y = Math.atan2(dx,dz);
       if(d<2.2 && e.atkCd<=0){
-        e.atkCd=1.2; e.atkAnim=0.45;
+        e.atkCd=e.smash?1.8:1.2; e.atkAnim=0.45;
         damagePlayer(e.dmg);
+        if(e.chill){ RT.slowT=Math.max(RT.slowT||0,1.7); spawnFlash(px,1.3,pz,0xbfe8ff,0.7); if((RT._webMsgT||0)<=0){ RT._webMsgT=3.2; narrate('The Yasquatch\u2019s frost-grip slows your blood!'); } }
+        else if(e.smash){ spawnRing(px,pz,0xc09060,3.4); }
         spawnFlash(px,1.2,pz,0x4aa0a0,0.4);
       }
     }
@@ -1735,6 +1753,13 @@ function updateProjectiles(dt){
       p.vz += (tzn*sp-p.vz)*Math.min(1,dt*p.homing);
       const nm=Math.sqrt(p.vx*p.vx+p.vz*p.vz)||1; p.vx=p.vx/nm*sp; p.vz=p.vz/nm*sp;
     }
+    if(p.grav){
+      p.vy=(p.vy||0)-p.grav*dt;
+      p.mesh.position.y+=p.vy*dt;
+      const hv=Math.sqrt(p.vx*p.vx+p.vz*p.vz)||1;
+      p.mesh.rotation.x=Math.atan2(-p.vy,hv);
+      if(p.mesh.position.y<0.12){ spawnFlash(p.mesh.position.x,0.1,p.mesh.position.z,0xc9b89a,0.3); p.life=0; }
+    }
     p.mesh.position.x += p.vx*dt;
     p.mesh.position.z += p.vz*dt;
     p.life-=dt;
@@ -1748,15 +1773,19 @@ function updateProjectiles(dt){
         if(!e.dead && dist2D(x,z,e.x,e.z)<1.2){
           if(p.kind==='ember'){ emberExplode(x,z); }
           else damageEnemy(e,p.dmg, p.vx*0.02, p.vz*0.02);
+          if(p.web && !e.dead){ e.slowT=2.6; e.slowMul=0.4; spawnRing(e.x,e.z,0xeaf4ff,2.2); }
+          if(p.hex && !e.dead){ e.hexT=Math.max(e.hexT||0,4.0); e.hexTick=(e.hexTick&&e.hexTick>0)?e.hexTick:0.7; e.hexDmg=Math.max(4,Math.round(p.dmg*0.4)); }
           hit=true; break;
         }
       }
       if(!hit && RT.boss && dist2D(x,z,RT.boss.x,RT.boss.z)<1.6){
         if(p.kind==='ember'){ emberExplode(x,z); } else damageBoss(p.dmg);
+        if(p.web){ RT.boss.slowT=2.6; RT.boss.slowMul=0.5; } if(p.hex){ RT.boss.hexT=Math.max(RT.boss.hexT||0,4.0); RT.boss.hexTick=(RT.boss.hexTick&&RT.boss.hexTick>0)?RT.boss.hexTick:0.7; RT.boss.hexDmg=Math.max(5,Math.round(p.dmg*0.4)); }
         hit=true;
       }
       if(!hit && RT.sboss && dist2D(x,z,RT.sboss.x,RT.sboss.z)<2.2){
         if(p.kind==='ember'){ emberExplode(x,z); } else damageStageBoss(p.dmg);
+        if(p.web){ RT.sboss.slowT=2.6; RT.sboss.slowMul=0.5; } if(p.hex){ RT.sboss.hexT=Math.max(RT.sboss.hexT||0,4.0); RT.sboss.hexTick=(RT.sboss.hexTick&&RT.sboss.hexTick>0)?RT.sboss.hexTick:0.7; RT.sboss.hexDmg=Math.max(5,Math.round(p.dmg*0.4)); }
         hit=true;
       }
       if(!hit && p.kind==='ember' && p.life<=0){ emberExplode(x,z); }
@@ -1772,7 +1801,8 @@ function playerAttack(){
   if(RT.inDialogue || RT.paused) return;
   if(S.weapon==='bow' && S.weaponUnlocked.bow){
     if(RT.bowTimer>0) return;
-    RT.bowTimer=CFG.BOW_CD; fireArrow();
+    if(typeof startBowDraw==='function'){ startBowDraw(); }
+    else { RT.bowTimer=CFG.BOW_CD; fireArrow(); }
   }else{
     if(RT.attackTimer>0) return;
     RT.attackTimer=CFG.ATTACK_CD; RT.swingT=0.22;
@@ -1940,6 +1970,7 @@ function updateBoss(dt){
   const b=RT.boss; if(!b) return;
   b.bob+=dt*2.2; b.baseY=Math.sin(b.bob)*0.12;
   if(b.slowT>0){ b.slowT-=dt; if(b.slowT<=0) b.slowMul=1; }
+  if((b.hexT||0)>0){ b.hexT-=dt; b.hexTick=(b.hexTick||0)-dt; if(b.hexTick<=0){ b.hexTick=0.7; damageBoss(b.hexDmg||6); spawnFlash(b.x,1.6,b.z,0xaa00ff,0.5); } }
   if(b.atkCd>0) b.atkCd-=dt;
   if(b.slamCd>0) b.slamCd-=dt;
   const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
@@ -2072,6 +2103,7 @@ function usePotion(){
 }
 function swapWeapon(){
   if(!S.weaponUnlocked.bow){ narrate("You've no bow yet. Wenna Ironbrow keeps one at her forge."); return; }
+  if(typeof bowCancel==='function') bowCancel();
   S.weapon = S.weapon==='sword' ? 'bow' : 'sword';
   updateWeaponVisual(); saveGame();
 }
@@ -2228,7 +2260,7 @@ function updateMovement(dt){
 
   if(moving && (Math.abs(mx)>0.01||Math.abs(mz)>0.01)){
     PLAYER.angle=Math.atan2(mx,mz);
-    _walkT+=dt*10;
+    _walkT+=dt*Math.min(15, speed*1.8);
   }
   PLAYER.group.position.x=nx; PLAYER.group.position.z=nz;
   PLAYER.group.position.y = moving && !dodging ? Math.abs(Math.sin(_walkT))*0.06 : 0;
@@ -2250,27 +2282,64 @@ function updateCamera(dt){
 }
 function updateSwing(dt){
   if(!PLAYER.armR) return;
+  if(typeof updateBow==='function') updateBow(dt);
   if(RT.swingT>0) RT.swingT=Math.max(0,RT.swingT-dt);
   PLAYER._idleT=(PLAYER._idleT||0)+dt;
   const moving = RT.moving && !RT.dodging;
-  const ph=_walkT, amp=0.58;
-  let lLeg = moving? Math.sin(ph)*amp : Math.sin(PLAYER._idleT*1.4)*0.015;
-  let rLeg = moving? -Math.sin(ph)*amp : -Math.sin(PLAYER._idleT*1.4)*0.015;
-  let lArm = moving? -Math.sin(ph)*0.5 + 0.06 : 0.06 + Math.sin(PLAYER._idleT*1.5)*0.03;
-  let rArm = moving?  Math.sin(ph)*0.5 + 0.06 : 0.06 - Math.sin(PLAYER._idleT*1.5)*0.03;
-  let rArmZ = 0;
-  if(RT.dodging){ lArm=rArm=-0.5; lLeg=0.45; rLeg=-0.45; }
-  if(RT.swingT>0){ const prog=clamp(1-RT.swingT/0.22,0,1); rArm = -2.4*Math.sin(prog*Math.PI*0.9) - 0.15; rArmZ = -0.4*Math.sin(prog*Math.PI); }
-  const k=0.35, ks=RT.swingT>0?0.62:0.32;
-  PLAYER.legL.rotation.x = lerp(PLAYER.legL.rotation.x, lLeg, k);
-  PLAYER.legR.rotation.x = lerp(PLAYER.legR.rotation.x, rLeg, k);
-  PLAYER.armL.rotation.x = lerp(PLAYER.armL.rotation.x, lArm, k);
-  PLAYER.armR.rotation.x = lerp(PLAYER.armR.rotation.x, rArm, ks);
-  PLAYER.armR.rotation.z = lerp(PLAYER.armR.rotation.z||0, rArmZ, ks);
+  const ph=_walkT, m=moving?1:0;
+  const aL=PLAYER.armL, aR=PLAYER.armR, lL=PLAYER.legL, lR=PLAYER.legR;
+  const archery = (typeof bowBusy==='function') && bowBusy();
+
+  let lLeg, rLeg, lArm, rArm, rArmZ=0, lArmZ=0;
+  let kneeL=0, kneeR=0, elbL=-0.12, elbR=-0.12, headX=0, headZ=0, hip=0;
+
+  if(archery){
+    // — archer stance: bow arm (right) extended, left hand draws to the cheek —
+    const dr=BOWFX.draw, fol=(BOWFX.s==='follow')?Math.min(1,BOWFX.t/0.12):0;
+    rArm=-1.50; rArmZ=-0.05; elbR=-0.08;
+    if(BOWFX.s==='draw'){ lArm=-1.50+dr*0.55; lArmZ=0.18*dr; elbL=-(0.15+dr*1.75); }
+    else { lArm=-0.75-fol*0.30; lArmZ=0.10; elbL=-0.35; }          // the loose flings back
+    headZ=-0.10*dr; headX=-0.04*dr;
+    if(moving){ lLeg=Math.sin(ph)*0.40; rLeg=-Math.sin(ph)*0.40;
+      kneeL=(0.15+Math.max(0,Math.sin(ph+1.9))*0.5)*m; kneeR=(0.15+Math.max(0,Math.sin(ph+1.9+Math.PI))*0.5)*m; }
+    else { lLeg=0.26; rLeg=-0.30; kneeL=0.12; kneeR=0.22; }       // planted open stance
+  } else if(RT.dodging){
+    lArm=rArm=-0.6; elbL=elbR=-1.2; lLeg=0.5; rLeg=-0.5; kneeL=kneeR=0.8;
+  } else if(moving){
+    // — run gait: long stride, knee fold on recovery, pumping bent arms —
+    const amp=0.72;
+    lLeg=Math.sin(ph)*amp; rLeg=-Math.sin(ph)*amp;
+    kneeL=(0.20+Math.max(0,Math.sin(ph+1.9))*0.75);
+    kneeR=(0.20+Math.max(0,Math.sin(ph+1.9+Math.PI))*0.75);
+    lArm=-Math.sin(ph)*0.60+0.05; rArm=Math.sin(ph)*0.60+0.05;
+    elbL=elbR=-0.95;
+    hip=Math.sin(ph)*0.04;
+    headX=-Math.abs(Math.sin(ph))*0.06;                              // gaze stays level
+  } else {
+    // — idle: settled weight, soft elbows, breathing —
+    lLeg=Math.sin(PLAYER._idleT*1.4)*0.015; rLeg=-lLeg;
+    lArm=0.06+Math.sin(PLAYER._idleT*1.5)*0.03; rArm=0.06-Math.sin(PLAYER._idleT*1.5)*0.03;
+    headX=Math.sin(PLAYER._idleT*1.3)*0.03;
+  }
+
+  if(!archery && RT.swingT>0){
+    const prog=clamp(1-RT.swingT/0.22,0,1), sl=Math.sin(prog*Math.PI*0.9);
+    rArm=-2.4*sl-0.15; rArmZ=-0.4*Math.sin(prog*Math.PI); elbR=-0.25-0.5*Math.sin(prog*Math.PI);
+  }
+
+  const k=archery?0.5:0.35, ks=(RT.swingT>0||archery)?0.62:0.32;
+  lL.rotation.x=lerp(lL.rotation.x,lLeg,k);  lR.rotation.x=lerp(lR.rotation.x,rLeg,k);
+  aL.rotation.x=lerp(aL.rotation.x,lArm,ks); aR.rotation.x=lerp(aR.rotation.x,rArm,ks);
+  aL.rotation.z=lerp(aL.rotation.z||0,0.08+lArmZ,ks); aR.rotation.z=lerp(aR.rotation.z||0,-0.08+rArmZ,ks);
+  if(lL.lo) lL.lo.rotation.x=lerp(lL.lo.rotation.x,kneeL,k);
+  if(lR.lo) lR.lo.rotation.x=lerp(lR.lo.rotation.x,kneeR,k);
+  if(aL.lo) aL.lo.rotation.x=lerp(aL.lo.rotation.x,elbL,ks);
+  if(aR.lo) aR.lo.rotation.x=lerp(aR.lo.rotation.x,elbR,ks);
+  PLAYER.group.rotation.z=lerp(PLAYER.group.rotation.z||0,hip,0.2);
   if(PLAYER.head){
-    const hb = moving? Math.sin(ph*2)*0.04 : Math.sin(PLAYER._idleT*1.3)*0.03;
-    PLAYER.head.rotation.x = lerp(PLAYER.head.rotation.x, hb, 0.2);
-    PLAYER.head.rotation.y = lerp(PLAYER.head.rotation.y, Math.sin(PLAYER._idleT*0.8)*0.05, 0.1);
+    PLAYER.head.rotation.x=lerp(PLAYER.head.rotation.x,headX,0.22);
+    PLAYER.head.rotation.z=lerp(PLAYER.head.rotation.z||0,headZ,0.3);
+    PLAYER.head.rotation.y=lerp(PLAYER.head.rotation.y, archery?0:Math.sin(PLAYER._idleT*0.8)*0.05, 0.1);
   }
 }
 function haloSpin(dt){
@@ -2296,6 +2365,7 @@ function updateDog(dt){
     if(DOG.legs[0]) DOG.legs[0].rotation.x=s1; if(DOG.legs[3]) DOG.legs[3].rotation.x=s1;
     if(DOG.legs[1]) DOG.legs[1].rotation.x=s2; if(DOG.legs[2]) DOG.legs[2].rotation.x=s2; }
   if(DOG.tail) DOG.tail.rotation.z=Math.sin(performance.now()*0.02)*0.6;
+  if(DOG.wings){ DOG.wings.t=(DOG.wings.t||0)+dt; const wf=Math.sin(DOG.wings.t*6)*0.18*(0.4+dogSpeed); DOG.wings.L.rotation.z=wf; DOG.wings.R.rotation.z=-wf; }
   DOG.atk=(DOG.atk||0)-dt;
   if(DOG.atk<=0){
     let near=null, nd=3.6;
@@ -2740,6 +2810,9 @@ const ARCH_BASE={
   beast:{hp:46,spd:4.1,dmg:10,hover:0},
   flyer:{hp:40,spd:3.5,dmg:8,hover:1.4},
   golem:{hp:120,spd:1.9,dmg:16,hover:0},
+  werewolf:{hp:64,spd:4.4,dmg:11,hover:0},
+  bigfoot:{hp:150,spd:2.2,dmg:18,hover:0},
+  yasquatch:{hp:130,spd:2.6,dmg:14,hover:0},
 };
 function makeWraith(mats,scale){
   const g=new THREE.Group(); const b=mats.ghost;
@@ -2843,6 +2916,9 @@ function makeByArch(arch,mats,scale,weapon){
     case 'golem':    return makeRigGolem(mats,scale);
     case 'eel':      return makeEel(mats,scale);
     case 'spider':   return makeRigSpider(mats,scale);
+    case 'werewolf': return makeRigWerewolf(mats,scale);
+    case 'bigfoot':  return makeRigBigfoot(mats,scale);
+    case 'yasquatch':return makeRigYasquatch(mats,scale);
     default:         return makeRigWraith(mats,scale);
   }
 }
@@ -2854,7 +2930,7 @@ function spawnCreature(arch,x,z,opts){
   const g=makeByArch(arch,cmats,scale,opts.weapon);
   g.position.set(x,0,z); scene.add(g);
   const e={
-    group:g, x:x, z:z, baseY:0,
+    group:g, x:x, z:z, baseY:0, mats:cmats,
     hp:Math.round(base.hp*mul*diff), maxHp:Math.round(base.hp*mul*diff),
     speed:base.spd, dmg:Math.round(base.dmg*mul*Math.min(diff,1.8)),
     atkCd:0, hitFlash:0, slowT:0, slowMul:1, bob:Math.random()*6,
@@ -2864,6 +2940,9 @@ function spawnCreature(arch,x,z,opts){
     rig:(g.userData&&g.userData.rig)||null, anim:(typeof animFor==='function'?animFor(arch):null),
     moveAmt:0, atkAnim:0, animT:Math.random()*4,
   };
+  if(arch==='werewolf'){ e.lunger=true; e.lungeCd=rand(1,3); e.lungeT=0; }
+  if(arch==='yasquatch'){ e.chill=true; }
+  if(arch==='bigfoot'){ e.smash=true; }
   ENEMIES.push(e); return e;
 }
 
@@ -2920,6 +2999,7 @@ function buildStageScene(def){
   }
   if(def.setpiece && typeof buildSetpiece==='function') buildSetpiece(def.setpiece, O.x, O.z+8);
   if(def.rescue && typeof buildCaptive==='function') buildCaptive(def, O.x, O.z+8);
+  if(typeof enhanceStageScene==='function') enhanceStageScene(def);
 }
 
 /* ---- enter / clear / return ---- */
@@ -2928,6 +3008,7 @@ function clearStage(){
   for(let i=ENEMIES.length-1;i>=0;i--){ scene.remove(ENEMIES[i].group); ENEMIES.splice(i,1); }
   if(RT.sboss){ scene.remove(RT.sboss.group); RT.sboss=null; }
   if(typeof clearHazards==='function') clearHazards();
+  if(typeof clearStageFx==='function') clearStageFx();
   if(RT.captive && RT.captive.group){ scene.remove(RT.captive.group); } RT.captive=null;
   RT.rootT=0; RT.slowT=0; RT.hexT=0;
   hideBossBar();
@@ -2992,6 +3073,7 @@ function returnToHub(showMsg){
 function stageUpdate(dt){
   if(!RT.stage) return;
   const def=RT.stage;
+  if(typeof stageFxUpdate==='function') stageFxUpdate(dt);
   if(!RT.bossSpawned){
     const remaining=RT.needKills-(RT.killCount||0);
     RT._spawnT=(RT._spawnT||0)-dt;
@@ -3027,6 +3109,7 @@ function spawnStageBoss(def){
   STAGE.mats.bossAccent = _ale ? _ale.accent : new THREE.MeshStandardMaterial({color:def.boss.color||0xff5a5a,emissive:def.boss.color||0xaa3030,emissiveIntensity:0.7,roughness:0.4,metalness:0.2});
   const bmats = _ale ? Object.assign({},STAGE.mats,_ale) : Object.assign({},STAGE.mats,{accent:STAGE.mats.bossAccent,eye:MAT.soul});
   const g=makeBossModel(def,bmats,def.boss.scale||2.0);
+  if(typeof addAleWings==='function') addAleWings(g,def);
   const bx=O.x, bz=O.z+44;
   g.position.set(bx,0,bz); scene.add(g);
   const diff=stageDiff(def);
@@ -3064,6 +3147,7 @@ function updateStageBoss(dt){
   if(b.slamCd>0) b.slamCd-=dt;
   if(b.specCd>0) b.specCd-=dt;
   if(b.slowT>0){ b.slowT-=dt; if(b.slowT<=0) b.slowMul=1; }
+  if((b.hexT||0)>0){ b.hexT-=dt; b.hexTick=(b.hexTick||0)-dt; if(b.hexTick<=0){ b.hexTick=0.7; damageStageBoss(b.hexDmg||6); spawnFlash(b.x,1.6,b.z,0xaa00ff,0.5); } }
   if(b.atkAnim>0) b.atkAnim-=dt;
   const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
   const d=dist2D(b.x,b.z,px,pz)||1, dx=(px-b.x)/d, dz=(pz-b.z)/d;
@@ -3083,6 +3167,9 @@ function updateStageBoss(dt){
   if(!b.sumA && b.hp<b.maxHp*0.6){ b.sumA=true; bossSummon(b,2); }
   if(!b.sumB && b.hp<b.maxHp*0.3){ b.sumB=true; bossSummon(b,3); }
   if(b.anim) b.anim(b,dt);
+  const wg=b.group.userData&&b.group.userData.aleWings;
+  if(wg){ wg.t+=dt; const fl=Math.sin(wg.t*2.4)*0.10+(b.moveAmt||0)*0.16+((b.atkAnim||0)>0?0.3:0);
+    wg.L.rotation.z=fl; wg.R.rotation.z=-fl; }
   b.group.position.set(b.x,b.baseY,b.z);
   const O=STAGE_ORIGIN; b.x=clamp(b.x,O.x-54,O.x+54); b.z=clamp(b.z,O.z-54,O.z+54);
   const fill=$('bossFill'); if(fill) fill.style.width=clamp(b.hp/b.maxHp*100,0,100)+'%';
@@ -3097,7 +3184,7 @@ function stageBossDefeated(){
   const b=RT.sboss; if(!b) return;
   var bd=(RT.stage&&RT.stage.boss)?RT.stage.boss:{};
   var bopts={hat:bd.hat,weapon:bd.weapon,cape:bd.cape,coat:bd.coat,beak:bd.beak,broad:bd.broad,color:bd.color};
-  setNecroIfStronger(b.arch, b.maxHp, b.name, b.scale, bd.form||'archetype', bopts, allyPowerFor(bd));
+  setNecroIfStronger(b.arch, b.maxHp, b.name, b.scale, bd.form||'archetype', bopts, allyPowerFor(bd), null, null, (RT.stage&&RT.stage.num)||null);
   spawnFlash(b.x,2.2,b.z,0xffe2a0,2.4); spawnRing(b.x,b.z,0xffe2a0,10);
   scene.remove(b.group); RT.sboss=null; hideBossBar();
   const def=RT.stage;
@@ -3117,15 +3204,21 @@ function stageBossDefeated(){
 /* ===========================================================================
    NECROMANCY — raise the strongest foe you have slain (TRIPLE its health)
 =========================================================================== */
-function setNecroIfStronger(arch,maxHp,name,scale,form,opts,power){
+function setNecroIfStronger(arch,maxHp,name,scale,form,opts,power,colors,flags,bossNum){
   if(!maxHp) return;
   if(!S.necroTemplate || maxHp > S.necroTemplate.maxHp){
     S.necroTemplate={arch:arch||'wraith',maxHp:maxHp,name:name||'thrall',scale:scale||1,
-      form:form||'archetype', opts:opts||null, power:power||null};
+      form:form||'archetype', opts:opts||null, power:power||null,
+      colors:colors||null, flags:flags||null, bossNum:bossNum||null};
     if(S.skills && S.skills.necromancy) narrate('The Grimoire stirs: '+(name||'that foe')+' is now the strongest spirit you could raise.');
   }
 }
-function trackNecro(e){ if(e) setNecroIfStronger(e.arch, e.maxHp, e.cname, e.cscale, 'archetype', null, null); }
+function trackNecro(e){
+  if(!e) return;
+  const colors=(typeof captureCreatureColors==='function')?captureCreatureColors(e.mats):null;
+  const flags={ ranged:!!e.ranged, lunger:!!e.lunger, chill:!!e.chill, smash:!!e.smash };
+  setNecroIfStronger(e.arch, e.maxHp, e.cname, e.cscale, 'archetype', null, null, colors, flags, null);
+}
 
 let ALLY=null, _allyTag=null;
 function allyTagEl(){
@@ -3134,7 +3227,7 @@ function allyTagEl(){
     document.body.appendChild(_allyTag); }
   return _allyTag;
 }
-function despawnAlly(){ if(ALLY){ scene.remove(ALLY.group); ALLY=null; } if(_allyTag) _allyTag.style.display='none'; }
+function despawnAlly(){ if(ALLY){ scene.remove(ALLY.group); if(ALLY.ownMats){ for(const m of ALLY.ownMats){ if(m&&m.dispose) m.dispose(); } } if(ALLY.boltMat&&ALLY.boltMat.dispose) ALLY.boltMat.dispose(); ALLY=null; } if(_allyTag) _allyTag.style.display='none'; }
 function castRaise(){
   if(RT.inDialogue||RT.paused) return;
   if(!S.skills||!S.skills.necromancy){ narrate('You have not learned Necromancy. Study the Black Grimoire (speak with Maren).'); return; }
@@ -3149,12 +3242,18 @@ function castRaise(){
   const ax=px+Math.sin(PLAYER.angle)*2.2, az=pz+Math.cos(PLAYER.angle)*2.2;
   g.position.set(ax,0,az); scene.add(g);
   const base=ARCH_BASE[t.arch]||ARCH_BASE.wraith;
+  const fl=t.flags||{};
+  const tintC=(t.colors&&t.colors.primary!=null)?t.colors.primary:0xc080ff;
   ALLY={ group:g, x:ax, z:az, baseY:0, bob:Math.random()*6, hp:t.maxHp*3, maxHp:t.maxHp*3,
     dmg:Math.max(14,Math.round(t.maxHp*0.22)), atkCd:0, hoverY:(t.form&&t.form!=='archetype')?0:base.hover,
     name:t.name, power:t.power||null, powerCd:2.0,
+    ranged:!!fl.ranged, lunger:!!fl.lunger, chill:!!fl.chill, smash:!!fl.smash,
+    rcd:Math.random()*2, lungeCd:rand(1,3), lungeT:0,
+    boltMat:(typeof allyBoltMat==='function'?allyBoltMat(tintC):MAT.grief), flashC:tintC,
+    ownMats:(g.userData&&g.userData.allyMats)||null,
     rig:(g.userData&&g.userData.rig)||null, anim:(typeof animForTemplate==='function'?animForTemplate(t):null),
     moveAmt:0, atkAnim:0, animT:0 };
-  spawnRing(ax,az,0xc080ff,6); spawnFlash(ax,1.4,az,0xc080ff,1.4);
+  spawnRing(ax,az,tintC,6); spawnFlash(ax,1.4,az,tintC,1.4);
   const powerLine = t.power ? ' It still carries the strength it had in life \u2014 turned, now, against your foes.' : '';
   narrate('You raise '+t.name+' \u2014 it claws up to stand at your side, with '+(t.maxHp*3)+' hp.'+powerLine);
   allyTagEl().style.display='block';
@@ -3181,18 +3280,30 @@ function updateAlly(dt){
   if(tgt && a.power && a.power!=='chill' && a.powerCd<=0 && d<20){
     a.powerCd=allyPowerCd(a.power); allyUsePower(a,tx,tz);
   }
-  const closeAt = (a.power==='volley'||a.power==='bolt'||a.power==='poisonbolt') ? 9 : 2.2;
+  // inherited common-foe attacks: ranged spectral shot, and lunge
+  if((a.rcd||0)>0) a.rcd-=dt;
+  if(tgt && a.ranged && !a.power && d>4 && d<22 && (a.rcd||0)<=0){
+    a.rcd=2.3; a.atkAnim=0.45; a.group.rotation.y=Math.atan2(dx,dz);
+    allyBolt(a.x,a.z,tx,tz,Math.max(6,Math.round(a.dmg*0.9)), a.boltMat||MAT.grief, 13);
+    spawnFlash(a.x,1.4,a.z,a.flashC||0xc080ff,0.3);
+  }
+  if(a.lunger){ a.lungeCd=(a.lungeCd||0)-dt; if((a.lungeT||0)>0) a.lungeT-=dt;
+    if((a.lungeCd||0)<=0 && tgt && d>3.5 && d<11){ a.lungeT=0.4; a.lungeCd=3.4; a.atkAnim=0.45; spawnFlash(a.x,1.2,a.z,a.flashC||0xffd0a0,0.4); } }
+  const ranX = (a.power==='volley'||a.power==='bolt'||a.power==='poisonbolt'||a.power==='webbolt'||a.power==='hexbolt'||a.power==='wispbolt');
+  const closeAt = (a.ranged||ranX) ? 8.5 : 2.2;
   let aMoving=0;
-  if(d>(tgt?closeAt:2.0)){ a.x+=dx*sp; a.z+=dz*sp; aMoving=1; }
-  else if(tgt && a.power==='volley' && d<6){ a.x-=dx*sp*0.5; a.z-=dz*sp*0.5; aMoving=1; }
+  if(d>(tgt?closeAt:2.0)){ const lsp=sp*(((a.lungeT||0)>0)?3:1); a.x+=dx*lsp; a.z+=dz*lsp; aMoving=1; }
+  else if(tgt && (a.ranged||ranX) && d<6){ a.x-=dx*sp*0.5; a.z-=dz*sp*0.5; aMoving=1; }
   a.moveAmt += (aMoving - (a.moveAmt||0))*Math.min(1,dt*8);
   a.group.rotation.y=Math.atan2(dx,dz);
   if(tgt && d<2.7 && a.atkCd<=0){
-    a.atkCd=1.0; a.atkAnim=0.45;
-    if(tgt.k==='e'){ const en=tgt.o; damageEnemy(en,a.dmg); if(a.power==='chill' && !en.dead){ en.slowT=2.5; en.slowMul=0.4; } if(!en.dead) a.hp-=en.dmg*0.5; }
+    a.atkCd=a.smash?1.6:1.0; a.atkAnim=0.45;
+    if(tgt.k==='e'){ const en=tgt.o; damageEnemy(en,a.dmg); if((a.power==='chill'||a.chill) && !en.dead){ en.slowT=2.5; en.slowMul=0.4; } if(!en.dead) a.hp-=en.dmg*0.5; }
     else if(tgt.k==='sb'){ damageStageBoss(a.dmg); a.hp-=(RT.sboss?RT.sboss.dmg*0.4:6); }
     else { damageBoss(a.dmg); a.hp-=(RT.boss?RT.boss.dmg*0.4:6); }
-    spawnFlash(tx,1.2,tz,0xc080ff,0.5);
+    if(a.chill) spawnRing(tx,tz,0xbfe8ff,3.0);
+    if(a.smash) spawnRing(a.x,a.z,0xc09060,3.4);
+    spawnFlash(tx,1.2,tz,a.flashC||0xc080ff,0.5);
     if(a.hp<=0){ despawnAlly(); narrate('Your thrall is hewn apart and crumbles back to dust.'); return; }
   }
   if(a.anim) a.anim(a,dt);
@@ -3641,6 +3752,10 @@ function allyPowerFor(bd){
   if(bd.kind==='director') return 'volley';
   if(bd.kind==='highwayman') return 'volley';
   if(bd.kind==='butcher') return 'cleave';
+  if(bd.kind==='weaver') return 'webbolt';
+  if(bd.kind==='inquisitor') return 'hexbolt';
+  if(bd.kind==='lanternist') return 'wispbolt';
+  if(bd.kind==='officer') return 'volley';
   if(bd.special==='volley') return 'volley';
   if(bd.special==='charge') return 'lunge';
   if(bd.special==='aoe') return 'firenova';
@@ -3649,17 +3764,32 @@ function allyPowerFor(bd){
 }
 function makeAllyModel(t){
   ensureStageAssets();
+  let mats=ALLYMATS, made=null;
+  if(t.bossNum && t.form && t.form!=='archetype' && typeof alePaintedPalette==='function' && typeof alebrijePalette==='function'){
+    mats=alePaintedPalette(alebrijePalette(t.bossNum*7+3)) || ALLYMATS; made=mats._made||null;
+  } else if(t.colors && typeof alePaintedPalette==='function'){
+    mats=alePaintedPalette(paletteFromColors(t.colors), t.colors.eye) || null;
+    if(!mats && typeof allyMatsFromColors==='function') mats=allyMatsFromColors(t.colors);
+    if(!mats) mats=ALLYMATS;
+    made=mats._made||null;
+  }
+  let g;
   if(t.form && t.form!=='archetype'){
     const fakeDef={boss:Object.assign({form:t.form,build:t.arch,scale:t.scale||1}, t.opts||{})};
-    return makeBossModel(fakeDef, ALLYMATS, t.scale||1);
+    g=makeBossModel(fakeDef, mats, t.scale||1);
+  } else {
+    g=makeByArch(t.arch, mats, t.scale||1);
   }
-  return makeByArch(t.arch, ALLYMATS, t.scale||1);
+  if(made) g.userData.allyMats=made;
+  return g;
 }
 /* ally projectile — no boss flag, so it strikes enemies and bosses */
-function allyBolt(x,z,tx,tz,dmg,mat,speed){
+function allyBolt(x,z,tx,tz,dmg,mat,speed,flags){
   const d=dist2D(x,z,tx,tz)||1, dx=(tx-x)/d, dz=(tz-z)/d; const sp=speed||16;
   const m=new THREE.Mesh(GEO.sphere, mat||MAT.grief); m.position.set(x+dx*1.2,1.7,z+dz*1.2); m.scale.set(0.6,0.6,0.6); scene.add(m);
-  PROJ.push({mesh:m, vx:dx*sp, vz:dz*sp, life:2.2, dmg:dmg, kind:'grief'});
+  const p={mesh:m, vx:dx*sp, vz:dz*sp, life:2.2, dmg:dmg, kind:'grief'};
+  if(flags){ if(flags.web) p.web=true; if(flags.hex) p.hex=true; if(flags.homing) p.homing=flags.homing; }
+  PROJ.push(p);
 }
 function allyAoe(x,z,r,dmg){
   for(const e of ENEMIES){ if(e.dead) continue; if(dist2D(e.x,e.z,x,z)<r) damageEnemy(e,dmg); }
@@ -3673,9 +3803,12 @@ function allyUsePower(a,tx,tz){
   else if(p==='poisonbolt'){ allyBolt(a.x,a.z,tx,tz,a.dmg*0.9,MAT.grief); }
   else if(p==='firenova'){ spawnRing(a.x,a.z,0xff5020,6); spawnFlash(a.x,1.4,a.z,0xff6020,1.4); allyAoe(a.x,a.z,6,a.dmg*0.8); }
   else if(p==='cleave'){ const fx=Math.sin(a.group.rotation.y), fz=Math.cos(a.group.rotation.y); spawnRing(a.x+fx,a.z+fz,0xffd060,4); allyAoe(a.x+fx*1.6,a.z+fz*1.6,3.6,a.dmg*1.1); }
+  else if(p==='webbolt'){ allyBolt(a.x,a.z,tx,tz,a.dmg*0.7, (typeof bossProjMat==='function'?bossProjMat('web'):MAT.grief), 13, {web:true}); }
+  else if(p==='hexbolt'){ allyBolt(a.x,a.z,tx,tz,a.dmg*0.7, (typeof bossProjMat==='function'?bossProjMat('hex'):MAT.grief), 13, {hex:true}); }
+  else if(p==='wispbolt'){ for(let i=0;i<2;i++){ const an=Math.random()*Math.PI*2; allyBolt(a.x,a.z,a.x+Math.sin(an)*4,a.z+Math.cos(an)*4,a.dmg*0.5,(typeof bossProjMat==='function'?bossProjMat('wisp'):MAT.grief),8,{homing:2.0}); } }
   else if(p==='lunge'){ const d=dist2D(a.x,a.z,tx,tz)||1; a.x+=(tx-a.x)/d*2.2; a.z+=(tz-a.z)/d*2.2; allyAoe(tx,tz,2.6,a.dmg*1.3); spawnFlash(tx,1.2,tz,0xffd060,0.9); }
 }
-function allyPowerCd(p){ return p==='firenova'?3.4 : p==='cleave'?2.0 : p==='volley'?2.4 : p==='lunge'?3.0 : 1.7; }
+function allyPowerCd(p){ return p==='firenova'?3.4 : p==='cleave'?2.0 : p==='volley'?2.4 : p==='lunge'?3.0 : p==='webbolt'?2.2 : p==='hexbolt'?2.6 : p==='wispbolt'?3.0 : 1.7; }
 
 /* ---- assign each boss a distinct form + accessories ---- */
 function applyBossForms(){
@@ -3789,13 +3922,19 @@ function animHumanoid(e,dt){
   const sp=8.5, stride=Math.sin(t*sp)*(0.55*mv), armsw=Math.sin(t*sp)*(0.45*mv);
   if(r.legL) r.legL.rotation.x=stride;
   if(r.legR) r.legR.rotation.x=-stride;
-  if(r.armL) r.armL.rotation.x=armsw+0.08;
+  if(r.armL){ r.armL.rotation.x=armsw+0.08; r.armL.rotation.z=0.08+Math.sin(t*sp)*0.06*mv; }
   if(r.armR){
-    if(atk>0){ const a=clamp(1-atk/AD,0,1); r.armR.rotation.x=-2.6*Math.sin(a*Math.PI*0.9)+0.1; r.armR.rotation.z=-0.3*Math.sin(a*Math.PI); }
-    else { r.armR.rotation.x=-armsw+0.08; r.armR.rotation.z=0; }
+    if(atk>0 && e.ranged){ const a=clamp(1-atk/AD,0,1); r.armR.rotation.x=-1.4; r.armR.rotation.z=-0.05; if(r.armL) r.armL.rotation.x=-1.3+a*0.15; }
+    else if(atk>0){ const a=clamp(1-atk/AD,0,1); r.armR.rotation.x=-2.6*Math.sin(a*Math.PI*0.9)+0.1; r.armR.rotation.z=-0.3*Math.sin(a*Math.PI); if(r.upper) r.upper.rotation.y=-0.3*Math.sin(a*Math.PI); }
+    else { r.armR.rotation.x=-armsw+0.08; r.armR.rotation.z=-0.08-Math.sin(t*sp)*0.06*mv; }
   }
-  if(r.upper){ r.upper.position.y=0.9+Math.abs(Math.sin(t*sp))*0.04*mv; r.upper.rotation.x=0.05*mv+Math.sin(t*1.8)*0.012; r.upper.rotation.z=Math.sin(t*sp)*0.025*mv; }
-  if(r.head){ r.head.rotation.x=-0.03*mv; r.head.rotation.y=Math.sin(t*1.3)*0.04; }
+  if(r.upper){
+    r.upper.position.y=0.875+Math.abs(Math.sin(t*sp))*0.05*mv;
+    r.upper.rotation.x=0.05*mv+Math.sin(t*1.8)*0.012;
+    r.upper.rotation.z=Math.sin(t*sp)*0.03*mv;
+    if(!(atk>0 && !e.ranged)) r.upper.rotation.y=-Math.sin(t*sp)*0.14*mv;
+  }
+  if(r.head){ r.head.rotation.x=-Math.abs(Math.sin(t*sp))*0.05*mv-0.02*mv; r.head.rotation.y=Math.sin(t*1.3)*0.04; }
 }
 
 /* ---- rigged wraith (floats, reaches) ---- */
@@ -3972,6 +4111,9 @@ function animFor(arch){
     case 'flyer':    return animFlyer;
     case 'golem':    return animGolem;
     case 'spider':   return animSpider;
+    case 'werewolf': return animWerewolf;
+    case 'bigfoot':  return animBigfoot;
+    case 'yasquatch':return animYasquatch;
     case 'eel':      return eelAnim;
     default:         return animWraith;
   }
@@ -4496,6 +4638,7 @@ function alebrijeMat(color,glow){
   return new THREE.MeshStandardMaterial({color:color,emissive:color,emissiveIntensity:(glow===undefined?0.30:glow),roughness:0.42,metalness:0.12});
 }
 function alebrijeBossMats(def){
+  if(typeof alePaintedBossMats==='function') return alePaintedBossMats(def);
   const pal=alebrijePalette((def&&def.num?def.num:1)*7+3);
   return {
     body:  alebrijeMat(pal[0],0.30),
@@ -4572,6 +4715,691 @@ function fireBossBolt(b,px,pz){
   else if(k==='cinder'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('ember'),14); }
   else if(k==='doctor'){ boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('sick'),13); }
   else { boltFrom(b.x,b.z,px,pz,dmg,bossProjMat('grief'),15); }
+}
+
+
+/* ===== ALEBRIJE PAINTWORK (spliced) ===== */
+/* ===========================================================================
+   THE BEACON — ALEBRIJE PAINTWORK
+   Procedural folk-art canvas textures in the Oaxacan style: ringed spots,
+   zigzag bands, diamond lattice, scale fans, feathered plumes, banner
+   stripes — plus segmented wing-fans on every boss (and Pip).
+   Textures are deterministic and cached; emissive maps keep them glowing
+   in the dark stages.
+=========================================================================== */
+
+const ALETEX = {};
+function _cssc(n){ return '#'+('00000'+((n>>>0)&0xffffff).toString(16)).slice(-6); }
+
+function aleTex(kind, base, a1, a2, rep){
+  const key=kind+'|'+base+'|'+a1+'|'+a2+'|'+(rep||1);
+  if(ALETEX[key]) return ALETEX[key];
+  const S=256, cv=document.createElement('canvas'); cv.width=cv.height=S;
+  const c=cv.getContext('2d');
+  const INK='#1a1016', WHT='#fff6da';
+  c.fillStyle=base; c.fillRect(0,0,S,S);
+  const wrapped=function(x,y,draw){ for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){ c.save(); c.translate(x+dx*S,y+dy*S); draw(); c.restore(); } };
+
+  if(kind==='dots'){
+    /* big ringed spots on a jittered grid + white stipple */
+    for(let gy=0;gy<4;gy++)for(let gx=0;gx<4;gx++){
+      const x=gx*64+32+(((gx*7+gy*13)%17)-8), y=gy*64+32+(((gx*11+gy*5)%17)-8), r=15+((gx*3+gy*7)%8);
+      wrapped(x,y,function(){
+        c.beginPath(); c.arc(0,0,r,0,7); c.fillStyle=a1; c.fill();
+        c.lineWidth=4; c.strokeStyle=INK; c.stroke();
+        c.beginPath(); c.arc(0,0,r*0.45,0,7); c.fillStyle=a2; c.fill();
+      });
+    }
+    c.fillStyle=WHT;
+    for(let i=0;i<70;i++){ const x=(i*97+13)%S, y=(i*57+29)%S; wrapped(x,y,function(){ c.beginPath(); c.arc(0,0,2.1,0,7); c.fill(); }); }
+
+  } else if(kind==='zig'){
+    /* alternating zigzag bands, ink-outlined, peak dots */
+    const zig=function(y0){ c.beginPath(); for(let x=-16;x<=S+16;x+=16){ const y=y0+(((((x/16)|0))%2)?8:-8); if(x===-16)c.moveTo(x,y); else c.lineTo(x,y);} };
+    for(let row=0;row<8;row++){
+      const y0=row*32+16, col=(row%2)?a1:a2;
+      c.lineWidth=9; c.strokeStyle=INK; zig(y0); c.stroke();
+      c.lineWidth=5; c.strokeStyle=col; zig(y0); c.stroke();
+      c.fillStyle=WHT;
+      for(let x=8;x<S;x+=32){ c.beginPath(); c.arc(x,y0-12,2.2,0,7); c.fill(); }
+    }
+
+  } else if(kind==='diamond'){
+    /* diagonal lattice with alternating centre dots and node pips */
+    c.strokeStyle=INK; c.lineWidth=3;
+    for(let k=-S;k<=S;k+=32){
+      c.beginPath(); c.moveTo(k,0); c.lineTo(k+S,S); c.stroke();
+      c.beginPath(); c.moveTo(k+S,0); c.lineTo(k,S); c.stroke();
+    }
+    for(let gy=0;gy<8;gy++)for(let gx=0;gx<8;gx++){
+      const x=gx*32+16, y=gy*32+16, col=((gx+gy)%2)?a1:a2;
+      c.beginPath(); c.arc(x,y,4.5,0,7); c.fillStyle=col; c.fill();
+    }
+    c.fillStyle=WHT;
+    for(let gy=0;gy<=8;gy++)for(let gx=0;gx<=8;gx++){ c.beginPath(); c.arc(gx*32,gy*32,1.8,0,7); c.fill(); }
+
+  } else if(kind==='scales'){
+    /* overlapping fan-scale rows, ink-outlined, white inner arcs */
+    for(let row=0; row<=8; row++){
+      const y=row*32, off=(row%2)?16:0;
+      for(let x=-32; x<S+32; x+=32){
+        const cx=x+off+16, col=(((((x/32)|0))+row)%2)?a1:a2;
+        c.beginPath(); c.arc(cx,y,16,0,Math.PI,false); c.fillStyle=col; c.fill();
+        c.lineWidth=3; c.strokeStyle=INK; c.stroke();
+        c.beginPath(); c.arc(cx,y,8,0,Math.PI,false); c.strokeStyle=WHT; c.lineWidth=2; c.stroke();
+      }
+    }
+
+  } else if(kind==='feather'){
+    /* long veined plumes with herringbone ticks + stipple */
+    const leaf=function(x,y,w,h,col){
+      c.beginPath(); c.moveTo(x,y);
+      c.bezierCurveTo(x+w,y+h*0.3, x+w,y+h*0.7, x,y+h);
+      c.bezierCurveTo(x-w,y+h*0.7, x-w,y+h*0.3, x,y);
+      c.fillStyle=col; c.fill(); c.lineWidth=3; c.strokeStyle=INK; c.stroke();
+      c.beginPath(); c.moveTo(x,y+6); c.lineTo(x,y+h-6); c.strokeStyle=WHT; c.lineWidth=2; c.stroke();
+      for(let t=y+16;t<y+h-10;t+=13){
+        c.beginPath(); c.moveTo(x,t); c.lineTo(x+w*0.55,t-7);
+        c.moveTo(x,t); c.lineTo(x-w*0.55,t-7);
+        c.lineWidth=1.4; c.strokeStyle=WHT; c.stroke();
+      }
+    };
+    for(let ci=0;ci<4;ci++){
+      const x=ci*64+32;
+      for(let k=0;k<2;k++){
+        const y0=k*128+12+((ci%2)?14:0);
+        leaf(x,y0,21,92,((ci+k)%2)?a1:a2);
+      }
+    }
+    c.fillStyle=WHT;
+    for(let i=0;i<36;i++){ const x=(i*113+7)%S, y=(i*71+41)%S; c.beginPath(); c.arc(x,y,1.8,0,7); c.fill(); }
+
+  } else if(kind==='stripes'){
+    /* bold banner bands with ink seams and white dot rows */
+    const cols=[a1,a2,base];
+    for(let bi=0;bi<8;bi++){
+      const y=bi*32;
+      c.fillStyle=cols[bi%3]; c.fillRect(0,y,S,32);
+      c.strokeStyle=INK; c.lineWidth=3;
+      c.beginPath(); c.moveTo(0,y+0.5); c.lineTo(S,y+0.5); c.stroke();
+      c.fillStyle=WHT;
+      for(let x=7;x<S;x+=14){ c.beginPath(); c.arc(x,y+8,2,0,7); c.fill(); }
+    }
+  }
+
+  const tex=new THREE.CanvasTexture(cv);
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+  if(THREE.sRGBEncoding!==undefined) tex.encoding=THREE.sRGBEncoding;
+  tex.repeat.set(rep||1,rep||1);
+  ALETEX[key]=tex;
+  return tex;
+}
+
+function aleStdMat(kind, base, a1, a2, o){
+  o=o||{};
+  const tex=aleTex(kind, _cssc(base), _cssc(a1), _cssc(a2), o.rep||1);
+  const m=new THREE.MeshStandardMaterial({
+    color:0xffffff, map:tex,
+    roughness:(o.rough!==undefined?o.rough:0.5),
+    metalness:(o.metal!==undefined?o.metal:0.08),
+    emissive:0xffffff, emissiveMap:tex,
+    emissiveIntensity:(o.glow!==undefined?o.glow:0.22)
+  });
+  if(o.ghost){ m.transparent=true; m.opacity=0.8; m.depthWrite=false; }
+  return m;
+}
+
+/* painted boss material set — registered in STAGE.mats for stage disposal */
+function alePaintedBossMats(def){
+  const pal=alebrijePalette(((def&&def.num)?def.num:1)*7+3);
+  const W=0xfff6da;
+  const M={
+    body:  aleStdMat('dots',   pal[0],pal[1],pal[3],{rep:2}),
+    body2: aleStdMat('diamond',pal[1],pal[2],W,{rep:2}),
+    metal: aleStdMat('zig',    pal[2],pal[0],W,{rep:2,metal:0.3,rough:0.35}),
+    accent:aleStdMat('scales', pal[3],pal[0],pal[1],{rep:2,glow:0.35}),
+    ghost: aleStdMat('dots',   pal[1],pal[3],W,{rep:2,ghost:true,glow:0.3}),
+    eye:   new THREE.MeshStandardMaterial({color:0xffd24a,emissive:0xff9100,emissiveIntensity:1.4,roughness:0.3})
+  };
+  for(const k in M) STAGE.mats['ab_'+k]=M[k];
+  return M;
+}
+
+/* segmented painted wing-fans, alebrije style */
+function addAleWings(g,def){
+  if(!def||!def.boss) return;
+  const pal=alebrijePalette(((def.num)?def.num:1)*7+3);
+  const W=0xfff6da;
+  const wm=[
+    aleStdMat('feather',pal[0],pal[2],pal[3],{rep:1,glow:0.3}),
+    aleStdMat('stripes',pal[1],pal[3],pal[0],{rep:1,glow:0.3}),
+    aleStdMat('feather',pal[2],pal[1],W,{rep:1,glow:0.3})
+  ];
+  for(let i=0;i<wm.length;i++) STAGE.mats['abw_'+i]=wm[i];
+  const f=def.boss.form;
+  const y=(f==='spider')?1.15:((f==='lavagolem'||f==='coingolem')?1.7:1.5);
+  const mk=function(side){
+    const Wg=new THREE.Group();
+    for(let i=0;i<6;i++){
+      const L=0.7+0.17*i;
+      const s=new THREE.Group(); s.rotation.z=side*(0.14+i*0.20);
+      const mesh=new THREE.Mesh(new THREE.BoxGeometry(0.13,L,0.045),wm[i%3]);
+      mesh.position.y=L/2; mesh.castShadow=true; s.add(mesh); Wg.add(s);
+    }
+    Wg.position.set(side*0.34,y,-0.22);
+    Wg.rotation.x=-0.5; Wg.rotation.y=side*0.22;
+    g.add(Wg); return Wg;
+  };
+  const Lw=mk(1), Rw=mk(-1);
+  g.userData.aleWings={L:Lw,R:Rw,t:0};
+}
+
+
+/* ===== FOLK BEASTS + STAGE ATMOSPHERE (spliced) ===== */
+/* ===========================================================================
+   THE BEACON — FOLK BEASTS + STAGE ATMOSPHERE
+   New regular enemies: the Werewolf (fast, lunging), the Wodewose/Bigfoot
+   (massive, slow, crushing), and the Yasquatch (frost-grip chills you).
+   Plus a stage graphics pass: mottled ground textures, instanced tufts and
+   rocks, themed drifting particles, god-ray shafts, tinted fill light.
+=========================================================================== */
+
+/* ---- shared beast materials (built once, lazily) ---- */
+let BEASTMATS=null;
+function ensureBeastMats(){
+  if(BEASTMATS) return BEASTMATS;
+  const S=function(c,e,ei,r){ return new THREE.MeshStandardMaterial({color:c,emissive:e||0x000000,emissiveIntensity:ei||0,roughness:(r===undefined?0.85:r)}); };
+  BEASTMATS={
+    fur:S(0x5a4030), fur2:S(0x3a2818), mane:S(0x241608),
+    bfur:S(0x6a4a2a), bfur2:S(0x4a3018),
+    yfur:S(0xe8f0f4,0x90b8d0,0.10,0.8), yfur2:S(0xc2d6e2,0x7aa0c0,0.08),
+    ice:S(0xbfe8ff,0x70c0ff,0.6,0.3), claw:S(0xe8e0c8,0,0,0.5),
+    eyeR:new THREE.MeshStandardMaterial({color:0xff5030,emissive:0xff3010,emissiveIntensity:1.3,roughness:0.3}),
+    eyeI:new THREE.MeshStandardMaterial({color:0x9fe0ff,emissive:0x60c0ff,emissiveIntensity:1.3,roughness:0.3}),
+    nose:S(0x181010,0,0,0.4)
+  };
+  return BEASTMATS;
+}
+
+/* ---- THE WEREWOLF — hunched, digitigrade, long-armed ---- */
+function makeRigWerewolf(mats,scale){
+  const B=ensureBeastMats();
+  const g=new THREE.Group();
+  const M=function(geo,mat,parent,x,y,z){ const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; (parent||g).add(m); return m; };
+  // digitigrade legs (hip pivots)
+  const mkLeg=function(side){
+    const p=new THREE.Group(); p.position.set(side*0.24,0.95,0); g.add(p);
+    const th=M(PART.thigh,B.fur,p,0,-0.16,0.06); th.rotation.x=0.55;
+    const sh=M(PART.shin,B.fur2,p,0,-0.52,0.18); sh.rotation.x=-0.85;
+    const ft=M(PART.foot,B.fur2,p,0,-0.84,0.04); ft.scale.set(1,1,1.35);
+    return p;
+  };
+  const legL=mkLeg(-1), legR=mkLeg(1);
+  // hunched upper body
+  const upper=new THREE.Group(); upper.position.set(0,0.95,0); upper.rotation.x=0.42; g.add(upper);
+  const torso=M(PART.torso,B.fur,upper,0,0.42,0); torso.scale.set(1.15,1.05,1.0);
+  M(PART.hips,B.fur2,upper,0,0.05,0);
+  // mane spikes along the spine
+  for(let i=0;i<4;i++){ const sp=M(SG.horn,B.mane,upper,0,0.78-i*0.16,-0.18-i*0.02); sp.rotation.x=-1.0-i*0.12; sp.scale.set(0.7,0.9-i*0.1,0.7); }
+  M(PART.shoulder,B.fur,upper,-0.42,0.66,0); M(PART.shoulder,B.fur,upper,0.42,0.66,0);
+  // long clawed arms (shoulder pivots)
+  const mkArm=function(side){
+    const p=new THREE.Group(); p.position.set(side*0.46,0.66,0); upper.add(p);
+    const ua=M(PART.upperArm,B.fur,p,0,-0.22,0);
+    const fa=M(PART.foreArm,B.fur2,p,0,-0.58,0.05); fa.scale.set(1,1.35,1);
+    const hd=M(PART.hand,B.fur2,p,0,-0.92,0.08);
+    for(let c=0;c<3;c++){ const cl=M(SG.horn,B.claw,p,(c-1)*0.05,-1.02,0.12); cl.rotation.x=2.6; cl.scale.set(0.4,0.5,0.4); }
+    return p;
+  };
+  const armL=mkArm(-1), armR=mkArm(1);
+  // wolf head (neck pivot)
+  const head=new THREE.Group(); head.position.set(0,0.86,0.16); upper.add(head);
+  const skull=M(GEO.sphere,B.fur,head,0,0.12,0.06); skull.scale.set(0.30,0.27,0.32);
+  const muz=M(SG.snout,B.fur2,head,0,0.07,0.30); muz.scale.set(1.1,0.9,1.5);
+  M(GEO.sphere,B.nose,head,0,0.10,0.46).scale.set(0.06,0.05,0.06);
+  const eL=M(PART.eye,B.eyeR,head,-0.10,0.18,0.26); eL.scale.setScalar(1.1);
+  const eR=M(PART.eye,B.eyeR,head, 0.10,0.18,0.26); eR.scale.setScalar(1.1);
+  const earL=M(SG.horn,B.fur2,head,-0.13,0.32,0.0); earL.rotation.z=0.3; earL.scale.set(0.6,0.8,0.6);
+  const earR=M(SG.horn,B.fur2,head, 0.13,0.32,0.0); earR.rotation.z=-0.3; earR.scale.set(0.6,0.8,0.6);
+  // tail
+  const tail=M(PART.tail,B.fur,g,0,0.85,-0.34); tail.rotation.x=2.4;
+  g.userData.rig={legL:legL,legR:legR,armL:armL,armR:armR,upper:upper,head:head};
+  g.scale.setScalar(scale||1);
+  return g;
+}
+function animWerewolf(e,dt){
+  const r=e.rig; if(!r) return;
+  e.animT+=dt*(1+(e.moveAmt||0)*1.6);
+  const t=e.animT*7.5, m=e.moveAmt||0;
+  const st=Math.sin(t)*0.8*m;
+  r.legL.rotation.x=st; r.legR.rotation.x=-st;
+  const reach=-0.85;
+  r.armL.rotation.x=reach+Math.sin(t)*0.35*m;
+  r.armR.rotation.x=reach-Math.sin(t)*0.35*m;
+  r.upper.rotation.x=0.42+Math.sin(t*2)*0.05*m+m*0.08;
+  r.head.rotation.x=-0.30+Math.sin(t*2+1)*0.05;
+  if((e.atkAnim||0)>0){
+    const p=1-(e.atkAnim/0.45), sl=Math.sin(Math.min(1,p)*Math.PI);
+    r.armR.rotation.x=reach-2.0*sl;
+    r.armL.rotation.x=reach-1.6*Math.sin(Math.min(1,p*1.2)*Math.PI);
+    r.upper.rotation.x=0.42+0.25*sl;
+  }
+}
+
+/* ---- THE WODEWOSE (bigfoot) — massive, shaggy, crushing ---- */
+function makeRigBigfoot(mats,scale){
+  const B=ensureBeastMats();
+  const g=new THREE.Group();
+  const M=function(geo,mat,parent,x,y,z){ const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; (parent||g).add(m); return m; };
+  const mkLeg=function(side){
+    const p=new THREE.Group(); p.position.set(side*0.3,0.78,0); g.add(p);
+    const th=M(PART.thigh,B.bfur,p,0,-0.18,0); th.scale.set(1.5,1.1,1.5);
+    M(PART.shin,B.bfur2,p,0,-0.5,0).scale.set(1.4,1,1.4);
+    M(PART.foot,B.bfur2,p,0,-0.74,0.08).scale.set(1.6,1.2,1.9);
+    return p;
+  };
+  const legL=mkLeg(-1), legR=mkLeg(1);
+  const upper=new THREE.Group(); upper.position.set(0,0.82,0); upper.rotation.x=0.14; g.add(upper);
+  const torso=M(PART.torso,B.bfur,upper,0,0.5,0); torso.scale.set(1.7,1.35,1.45);
+  M(PART.hips,B.bfur2,upper,0,0.06,0).scale.set(1.5,1,1.4);
+  // shaggy chest/shoulder tufts
+  for(let i=0;i<5;i++){ const tuft=M(SG.horn,B.bfur2,upper,(i-2)*0.16,0.30+((i%2)*0.12),0.34); tuft.rotation.x=2.7; tuft.scale.set(0.5,0.6,0.5); }
+  M(PART.shoulder,B.bfur,upper,-0.62,0.86,0).scale.setScalar(1.7);
+  M(PART.shoulder,B.bfur,upper, 0.62,0.86,0).scale.setScalar(1.7);
+  const mkArm=function(side){
+    const p=new THREE.Group(); p.position.set(side*0.68,0.84,0); upper.add(p);
+    M(PART.upperArm,B.bfur,p,0,-0.26,0).scale.set(1.5,1.25,1.5);
+    M(PART.foreArm,B.bfur2,p,0,-0.7,0).scale.set(1.45,1.4,1.45);
+    M(PART.hand,B.bfur2,p,0,-1.08,0.04).scale.setScalar(1.6);
+    return p;
+  };
+  const armL=mkArm(-1), armR=mkArm(1);
+  const head=new THREE.Group(); head.position.set(0,1.06,0.1); upper.add(head);
+  const skull=M(GEO.sphere,B.bfur,head,0,0.14,0.04); skull.scale.set(0.26,0.28,0.26);
+  M(GEO.sphere,B.bfur2,head,0,0.06,0.18).scale.set(0.18,0.13,0.14); // brow-muzzle
+  M(PART.eye,B.eyeR,head,-0.08,0.16,0.20); M(PART.eye,B.eyeR,head,0.08,0.16,0.20);
+  g.userData.rig={legL:legL,legR:legR,armL:armL,armR:armR,upper:upper,head:head};
+  g.scale.setScalar(scale||1);
+  return g;
+}
+function animBigfoot(e,dt){
+  const r=e.rig; if(!r) return;
+  e.animT+=dt*(0.8+(e.moveAmt||0)*0.9);
+  const t=e.animT*5.2, m=e.moveAmt||0;
+  const st=Math.sin(t)*0.5*m;
+  r.legL.rotation.x=st; r.legR.rotation.x=-st;
+  r.armL.rotation.x=-0.15-Math.sin(t)*0.4*m;
+  r.armR.rotation.x=-0.15+Math.sin(t)*0.4*m;
+  r.upper.rotation.z=Math.sin(t)*0.10*m;
+  r.upper.rotation.x=0.14+Math.abs(Math.sin(t))*0.04*m;
+  r.head.rotation.y=Math.sin(t*0.5)*0.12;
+  if((e.atkAnim||0)>0){
+    const p=1-(e.atkAnim/0.45), sl=Math.sin(Math.min(1,p)*Math.PI);
+    r.armL.rotation.x=-0.15-2.4*sl; r.armR.rotation.x=-0.15-2.4*sl;
+    r.upper.rotation.x=0.14+0.30*sl; r.upper.rotation.z=0;
+  }
+}
+
+/* ---- THE YASQUATCH — pale frost-giant, horned, shivering ---- */
+function makeRigYasquatch(mats,scale){
+  const B=ensureBeastMats();
+  const g=new THREE.Group();
+  const M=function(geo,mat,parent,x,y,z){ const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; (parent||g).add(m); return m; };
+  const mkLeg=function(side){
+    const p=new THREE.Group(); p.position.set(side*0.27,0.82,0); g.add(p);
+    M(PART.thigh,B.yfur,p,0,-0.18,0).scale.set(1.35,1.1,1.35);
+    M(PART.shin,B.yfur2,p,0,-0.52,0).scale.set(1.25,1,1.25);
+    M(PART.foot,B.yfur2,p,0,-0.76,0.07).scale.set(1.4,1.1,1.7);
+    return p;
+  };
+  const legL=mkLeg(-1), legR=mkLeg(1);
+  const upper=new THREE.Group(); upper.position.set(0,0.86,0); upper.rotation.x=0.1; g.add(upper);
+  const torso=M(PART.torso,B.yfur,upper,0,0.52,0); torso.scale.set(1.45,1.5,1.3);
+  M(PART.hips,B.yfur2,upper,0,0.06,0).scale.set(1.35,1,1.3);
+  M(PART.shoulder,B.yfur,upper,-0.56,0.92,0).scale.setScalar(1.55);
+  M(PART.shoulder,B.yfur,upper, 0.56,0.92,0).scale.setScalar(1.55);
+  // ice spikes on the shoulders and back
+  for(let i=0;i<3;i++){ const sp=M(SG.horn,B.ice,upper,-0.5+i*0.5,1.06,-0.14); sp.rotation.x=-0.5; sp.scale.set(0.55,0.8-(i===1?0:0.15),0.55); }
+  const mkArm=function(side){
+    const p=new THREE.Group(); p.position.set(side*0.62,0.9,0); upper.add(p);
+    M(PART.upperArm,B.yfur,p,0,-0.26,0).scale.set(1.35,1.3,1.35);
+    M(PART.foreArm,B.yfur2,p,0,-0.7,0).scale.set(1.3,1.35,1.3);
+    M(PART.hand,B.ice,p,0,-1.06,0.04).scale.setScalar(1.4);
+    return p;
+  };
+  const armL=mkArm(-1), armR=mkArm(1);
+  const head=new THREE.Group(); head.position.set(0,1.14,0.08); upper.add(head);
+  const skull=M(GEO.sphere,B.yfur,head,0,0.13,0.03); skull.scale.set(0.25,0.27,0.25);
+  M(GEO.sphere,B.yfur2,head,0,0.05,0.17).scale.set(0.16,0.12,0.13);
+  M(PART.eye,B.eyeI,head,-0.08,0.16,0.19); M(PART.eye,B.eyeI,head,0.08,0.16,0.19);
+  const hL=M(SG.horn,B.ice,head,-0.14,0.28,0.0); hL.rotation.z=0.55; hL.scale.set(0.6,1.0,0.6);
+  const hR=M(SG.horn,B.ice,head, 0.14,0.28,0.0); hR.rotation.z=-0.55; hR.scale.set(0.6,1.0,0.6);
+  g.userData.rig={legL:legL,legR:legR,armL:armL,armR:armR,upper:upper,head:head};
+  g.scale.setScalar(scale||1);
+  return g;
+}
+function animYasquatch(e,dt){
+  animBigfoot(e,dt);
+  const r=e.rig; if(!r) return;
+  // a cold, constant shiver
+  r.upper.rotation.z+=Math.sin(e.animT*40)*0.012;
+  r.head.rotation.z=Math.sin(e.animT*36)*0.02;
+}
+
+/* ---- seeding the beasts into the chapters ---- */
+function applyNewBeasts(){
+  const push=function(id,c){ const s=(typeof stageById==='function')?stageById(id):null; if(s&&s.creatures) s.creatures.push(c); };
+  push('ch2', {arch:'werewolf', name:'Witch-Wolf',           mul:1.25, scale:1.15});
+  push('ch4', {arch:'werewolf', name:'War-Wolf',             mul:1.30, scale:1.15});
+  push('ch11',{arch:'werewolf', name:'Heath Howler',         mul:1.35, scale:1.20});
+  push('ch3', {arch:'bigfoot',  name:'The Wodewose',         mul:1.50, scale:1.35});
+  push('ch8', {arch:'bigfoot',  name:'Shore Wodewose',       mul:1.55, scale:1.40});
+  push('ch9', {arch:'yasquatch',name:'Pale Yasquatch',       mul:1.45, scale:1.30});
+  push('ch12',{arch:'yasquatch',name:'Yasquatch of the Moor',mul:1.60, scale:1.40});
+}
+applyNewBeasts();
+
+/* ===========================================================================
+   STAGE ATMOSPHERE — ground texture, instanced scatter, particles, shafts
+=========================================================================== */
+let _gtexCache={};
+function groundTexFor(def){
+  const base=def.ground||0x556055, key='g'+base;
+  if(_gtexCache[key]) return _gtexCache[key];
+  const S=256, cv=document.createElement('canvas'); cv.width=cv.height=S;
+  const c=cv.getContext('2d');
+  c.fillStyle='#'+('00000'+(base&0xffffff).toString(16)).slice(-6);
+  c.fillRect(0,0,S,S);
+  for(let i=0;i<90;i++){
+    const x=(i*89+31)%S, y=(i*53+17)%S, r=8+((i*7)%18);
+    c.beginPath(); c.arc(x,y,r,0,7);
+    c.fillStyle=(i%2)?'rgba(0,0,0,0.13)':'rgba(255,255,255,0.05)'; c.fill();
+  }
+  for(let i=0;i<240;i++){
+    const x=(i*97+5)%S, y=(i*61+43)%S;
+    c.fillStyle=(i%3)?'rgba(0,0,0,0.18)':'rgba(255,255,255,0.10)';
+    c.fillRect(x,y,2,2);
+  }
+  const t=new THREE.CanvasTexture(cv);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(10,10);
+  if(THREE.sRGBEncoding!==undefined) t.encoding=THREE.sRGBEncoding;
+  _gtexCache[key]=t; return t;
+}
+
+const STAGE_FX={list:[],mats:[],geos:[],pts:null,vel:null,shafts:[]};
+function enhanceStageScene(def){
+  clearStageFx();
+  const O=STAGE_ORIGIN;
+  if(STAGE.mats.ground){ STAGE.mats.ground.map=groundTexFor(def); STAGE.mats.ground.needsUpdate=true; }
+  const dummy=new THREE.Object3D();
+  // instanced grass tufts
+  const tg=new THREE.ConeGeometry(0.09,0.55,5); STAGE_FX.geos.push(tg);
+  const tm=new THREE.MeshStandardMaterial({color:(def.boss&&def.boss.color)||0x6a7a5a,roughness:0.9}); STAGE_FX.mats.push(tm);
+  const tufts=new THREE.InstancedMesh(tg,tm,150); tufts.receiveShadow=true;
+  for(let i=0;i<150;i++){
+    const a=Math.random()*Math.PI*2, r=7+Math.random()*48;
+    dummy.position.set(O.x+Math.cos(a)*r, 0.26, O.z+Math.sin(a)*r);
+    dummy.rotation.set((Math.random()-0.5)*0.3, Math.random()*6.28, (Math.random()-0.5)*0.3);
+    const s=0.7+Math.random()*0.9; dummy.scale.set(s,s,s);
+    dummy.updateMatrix(); tufts.setMatrixAt(i,dummy.matrix);
+  }
+  scene.add(tufts); STAGE_FX.list.push(tufts);
+  // instanced rocks
+  const rg=new THREE.SphereGeometry(0.34,6,5); STAGE_FX.geos.push(rg);
+  const rm=new THREE.MeshStandardMaterial({color:0x4a4642,roughness:0.95}); STAGE_FX.mats.push(rm);
+  const rocks=new THREE.InstancedMesh(rg,rm,70); rocks.receiveShadow=true;
+  for(let i=0;i<70;i++){
+    const a=Math.random()*6.28, r=6+Math.random()*50;
+    dummy.position.set(O.x+Math.cos(a)*r, 0.12, O.z+Math.sin(a)*r);
+    dummy.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3);
+    dummy.scale.set(0.6+Math.random()*1.6, 0.4+Math.random()*0.7, 0.6+Math.random()*1.6);
+    dummy.updateMatrix(); rocks.setMatrixAt(i,dummy.matrix);
+  }
+  scene.add(rocks); STAGE_FX.list.push(rocks);
+  // themed drifting particles
+  const TH={ch1:{c:0x9fe8c0,m:'drift'},ch2:{c:0xcfc6b0,m:'drift'},ch3:{c:0xffc070,m:'rise'},
+            ch4:{c:0xb8b0a0,m:'drift'},ch5:{c:0xc8bca8,m:'drift'},ch6:{c:0x9ad24a,m:'drift'},
+            ch7:{c:0xff8040,m:'rise'},ch8:{c:0xa8d0e8,m:'drift'},ch9:{c:0xd8d0c0,m:'drift'},
+            ch10:{c:0xffd23a,m:'drift'},ch11:{c:0xb0a8d0,m:'drift'},ch12:{c:0xffffff,m:'fall'}};
+  const th=TH[def.id]||{c:0xd9b25a,m:'drift'};
+  const N=220, pos=new Float32Array(N*3); STAGE_FX.vel=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    pos[i*3]=O.x+(Math.random()-0.5)*110; pos[i*3+1]=Math.random()*13+0.5; pos[i*3+2]=O.z+(Math.random()-0.5)*110;
+    STAGE_FX.vel[i*3]=(Math.random()-0.5)*0.5;
+    STAGE_FX.vel[i*3+1]= th.m==='rise' ? (0.8+Math.random()*1.2) : th.m==='fall' ? -(0.8+Math.random()*0.9) : (Math.random()-0.5)*0.25;
+    STAGE_FX.vel[i*3+2]=(Math.random()-0.5)*0.5;
+  }
+  const pg=new THREE.BufferGeometry(); pg.setAttribute('position',new THREE.BufferAttribute(pos,3)); STAGE_FX.geos.push(pg);
+  const pm=new THREE.PointsMaterial({color:th.c,size:0.22,transparent:true,opacity:0.75,depthWrite:false,sizeAttenuation:true}); STAGE_FX.mats.push(pm);
+  const pts=new THREE.Points(pg,pm); scene.add(pts); STAGE_FX.list.push(pts); STAGE_FX.pts=pts;
+  // god-ray light shafts
+  const sc=(def.boss&&def.boss.color)||0xd9b25a;
+  for(let i=0;i<3;i++){
+    const cg=new THREE.ConeGeometry(2.4+i*0.7,17,10,1,true); STAGE_FX.geos.push(cg);
+    const cm=new THREE.MeshBasicMaterial({color:sc,transparent:true,opacity:0.05,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}); STAGE_FX.mats.push(cm);
+    const cone=new THREE.Mesh(cg,cm); cone.position.set(O.x+(i-1)*9, 8.5, O.z+6+i*3); cone.rotation.z=(i-1)*0.12;
+    scene.add(cone); STAGE_FX.list.push(cone); STAGE_FX.shafts.push(cone);
+  }
+  // tinted fill light
+  const pl=new THREE.PointLight(sc,0.45,95,2); pl.position.set(O.x,16,O.z-14);
+  scene.add(pl); STAGE_FX.list.push(pl);
+}
+function stageFxUpdate(dt){
+  if(STAGE_FX.pts){
+    const O=STAGE_ORIGIN, attr=STAGE_FX.pts.geometry.attributes.position, a=attr.array, v=STAGE_FX.vel;
+    for(let i=0;i<a.length;i+=3){
+      a[i]+=v[i]*dt; a[i+1]+=v[i+1]*dt; a[i+2]+=v[i+2]*dt;
+      if(a[i+1]>14) a[i+1]=0.4; if(a[i+1]<0.2) a[i+1]=13.5;
+      if(a[i]>O.x+56) a[i]=O.x-56; if(a[i]<O.x-56) a[i]=O.x+56;
+      if(a[i+2]>O.z+56) a[i+2]=O.z-56; if(a[i+2]<O.z-56) a[i+2]=O.z+56;
+    }
+    attr.needsUpdate=true;
+  }
+  for(let i=0;i<STAGE_FX.shafts.length;i++){
+    const s=STAGE_FX.shafts[i];
+    s.rotation.y+=dt*0.15;
+    s.material.opacity=0.045+Math.sin(performance.now()*0.0007+i*2)*0.02;
+  }
+}
+function clearStageFx(){
+  for(const o of STAGE_FX.list) scene.remove(o);
+  for(const gg of STAGE_FX.geos){ if(gg.dispose) gg.dispose(); }
+  for(const mm of STAGE_FX.mats){ if(mm.dispose) mm.dispose(); }
+  STAGE_FX.list=[]; STAGE_FX.geos=[]; STAGE_FX.mats=[]; STAGE_FX.pts=null; STAGE_FX.vel=null; STAGE_FX.shafts=[];
+}
+
+
+/* ===== REAL ARCHERY + MOTION POLISH (spliced) ===== */
+/* ===========================================================================
+   THE BEACON — REAL ARCHERY + MOTION POLISH
+   The bow is handled like a real bow: nock, draw to the cheek, anchor,
+   loose, follow-through. The string visibly bends, an arrow sits nocked
+   during the draw, and loosed arrows fly a true arc and stick or drop.
+   (A mirror-stance archer: bow in the right fist, drawing with the left.)
+=========================================================================== */
+
+const BOWFX={s:'idle',t:0,draw:0,dx:0,dz:1};
+function bowBusy(){ return BOWFX.s!=='idle'; }
+function _easeOut(t){ return 1-Math.pow(1-t,3); }
+
+/* ---- arrow mesh (shared lazily-built geometry) ---- */
+let _ARR=null;
+function _arrParts(){
+  if(_ARR) return _ARR;
+  _ARR={
+    shaft:new THREE.CylinderGeometry(0.013,0.013,0.6,6),
+    head:new THREE.ConeGeometry(0.032,0.1,6),
+    fl:new THREE.PlaneGeometry(0.05,0.1),
+    wood:new THREE.MeshStandardMaterial({color:0x7a4a22,roughness:0.7}),
+    tip:new THREE.MeshStandardMaterial({color:0xc8c2b0,roughness:0.4,metalness:0.5}),
+    fle:new THREE.MeshStandardMaterial({color:0xe8e0d0,roughness:0.8,side:THREE.DoubleSide})
+  };
+  return _ARR;
+}
+function mkArrowMesh(){
+  const A=_arrParts(), g=new THREE.Group();
+  const sh=new THREE.Mesh(A.shaft,A.wood); sh.rotation.x=Math.PI/2; g.add(sh);
+  const hd=new THREE.Mesh(A.head,A.tip); hd.rotation.x=Math.PI/2; hd.position.z=0.34; g.add(hd);
+  const f1=new THREE.Mesh(A.fl,A.fle); f1.position.z=-0.25; g.add(f1);
+  const f2=new THREE.Mesh(A.fl,A.fle); f2.position.z=-0.25; f2.rotation.z=Math.PI/2; g.add(f2);
+  return g;
+}
+
+/* ---- bow detail: live string + nocked arrow, added to the existing bow ---- */
+function ensureBowDetail(){
+  if(!PLAYER.bow || PLAYER.bow.userData.detail) return;
+  const pos=new Float32Array([0,0.58,0.02, 0,0,0.02, 0,-0.58,0.02]);
+  const sg=new THREE.BufferGeometry();
+  sg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const string=new THREE.Line(sg,new THREE.LineBasicMaterial({color:0xe8dcc0}));
+  PLAYER.bow.add(string);
+  const arrow=mkArrowMesh(); arrow.position.set(0,0,0.02); arrow.visible=false;
+  PLAYER.bow.add(arrow);
+  PLAYER.bow.userData.detail={sg:sg,arrow:arrow};
+}
+
+/* ---- aim: track the nearest living threat, else the facing line ---- */
+function bowAimDir(){
+  const px=PLAYER.group.position.x, pz=PLAYER.group.position.z;
+  let bx=0,bz=0,bd=48,found=false;
+  for(const e of ENEMIES){ if(e.dead) continue; const d=dist2D(px,pz,e.x,e.z); if(d<bd){bd=d;bx=e.x;bz=e.z;found=true;} }
+  if(RT.sboss){ const d=dist2D(px,pz,RT.sboss.x,RT.sboss.z); if(d<bd){bd=d;bx=RT.sboss.x;bz=RT.sboss.z;found=true;} }
+  if(RT.boss){ const d=dist2D(px,pz,RT.boss.x,RT.boss.z); if(d<bd){bd=d;bx=RT.boss.x;bz=RT.boss.z;found=true;} }
+  if(found){ const d=dist2D(px,pz,bx,bz)||1; return {dx:(bx-px)/d, dz:(bz-pz)/d}; }
+  return {dx:Math.sin(PLAYER.angle), dz:Math.cos(PLAYER.angle)};
+}
+
+function startBowDraw(){
+  if(BOWFX.s!=='idle') return;
+  ensureBowDetail();
+  const a=bowAimDir(); BOWFX.dx=a.dx; BOWFX.dz=a.dz;
+  BOWFX.s='draw'; BOWFX.t=0; BOWFX.draw=0;
+}
+function bowCancel(){
+  BOWFX.s='idle'; BOWFX.t=0; BOWFX.draw=0;
+  if(PLAYER.bow){ PLAYER.bow.rotation.x=0;
+    const d=PLAYER.bow.userData.detail;
+    if(d){ d.arrow.visible=false; d.sg.attributes.position.setZ(1,0.02); d.sg.attributes.position.needsUpdate=true; } }
+}
+
+/* ---- loose: an arrow that flies a real arc ---- */
+function bowLoose(dx,dz){
+  const m=mkArrowMesh();
+  m.position.set(PLAYER.group.position.x+dx*0.7, 1.45, PLAYER.group.position.z+dz*0.7);
+  m.rotation.y=Math.atan2(dx,dz);
+  scene.add(m);
+  PROJ.push({mesh:m, vx:dx*52, vz:dz*52, vy:1.4, grav:7, life:3.2,
+    dmg:CFG.BOW_DMG+S.bowBonus, kind:'arrow', boss:false});
+  spawnFlash(m.position.x,1.45,m.position.z,0xfff0d0,0.25);
+}
+
+/* ---- the draw cycle ---- */
+function updateBow(dt){
+  if(BOWFX.s==='idle') return;
+  ensureBowDetail();
+  if(RT.dodging && BOWFX.s==='draw'){ bowCancel(); return; }
+  if(BOWFX.s==='draw'){
+    BOWFX.t+=dt;
+    BOWFX.draw=_easeOut(Math.min(1,BOWFX.t/0.38));
+    const a=bowAimDir(); BOWFX.dx=a.dx; BOWFX.dz=a.dz;     // track the mark
+    if(BOWFX.t>=0.38){
+      bowLoose(BOWFX.dx,BOWFX.dz);
+      RT.bowTimer=CFG.BOW_CD;
+      BOWFX.s='follow'; BOWFX.t=0;
+    }
+  } else if(BOWFX.s==='follow'){
+    BOWFX.t+=dt;
+    BOWFX.draw=Math.max(0, 1-BOWFX.t/0.07);               // string snaps home
+    if(BOWFX.t>0.26){ bowCancel(); return; }
+  }
+  // face the mark while shooting
+  PLAYER.group.rotation.y=Math.atan2(BOWFX.dx,BOWFX.dz);
+  // string + nocked arrow + bow recoil
+  const d=PLAYER.bow && PLAYER.bow.userData.detail;
+  if(d){
+    d.sg.attributes.position.setZ(1, 0.02-0.30*BOWFX.draw);
+    d.sg.attributes.position.needsUpdate=true;
+    d.arrow.visible=(BOWFX.s==='draw');
+    d.arrow.position.z=0.02-0.30*BOWFX.draw;
+  }
+  if(PLAYER.bow) PLAYER.bow.rotation.x=(BOWFX.s==='follow') ? -0.28*(1-BOWFX.t/0.26) : 0;
+}
+
+
+/* ===== NECROMANCY INHERITANCE (spliced) ===== */
+/* ===========================================================================
+   THE BEACON — NECROMANCY INHERITANCE
+   A raised thrall keeps the colours of the foe it was torn from, and fights
+   with that foe's own attacks (ranged shots, lunges, frost-grip, crushing
+   blows). Colours are captured as plain hex so they survive stage teardown
+   and saved games, then rebuilt into fresh materials at the raising.
+=========================================================================== */
+
+function _hexOf(m,prop){ try{ return (m && m[prop] && m[prop].getHex) ? m[prop].getHex() : null; }catch(e){ return null; } }
+function captureCreatureColors(mats){
+  if(!mats) return null;
+  const grab=function(k){ const m=mats[k]; if(!m) return null;
+    return { c:_hexOf(m,'color'), e:_hexOf(m,'emissive'),
+             o:(m.opacity!==undefined?m.opacity:1), tr:!!m.transparent }; };
+  const c={ body:grab('body'), body2:grab('body2'), ghost:grab('ghost'),
+            metal:grab('metal'), accent:grab('accent'), eye:grab('eye') };
+  // a representative tint for bolts / flashes / summon FX
+  const first=c.body||c.ghost||c.accent||c.body2;
+  c.primary = first && first.c!=null ? first.c : 0xc080ff;
+  return c;
+}
+
+function allyMatsFromColors(c){
+  if(!c) return ALLYMATS;
+  const made=[];
+  const M=function(d, fallback){
+    if(!d || d.c==null) return fallback;
+    const o={ color:d.c, roughness:0.55, metalness:0.14 };
+    if(d.e!=null){ o.emissive=d.e; o.emissiveIntensity=0.45; }
+    if(d.tr){ o.transparent=true; o.opacity=(d.o!==undefined?d.o:0.7); o.depthWrite=false; }
+    const m=new THREE.MeshStandardMaterial(o); made.push(m); return m;
+  };
+  const eye = (c.eye && c.eye.c!=null)
+    ? (function(){ const m=new THREE.MeshStandardMaterial({color:c.eye.c,emissive:(c.eye.e!=null?c.eye.e:c.eye.c),emissiveIntensity:1.2,roughness:0.3}); made.push(m); return m; })()
+    : (ALLYMATS?ALLYMATS.eye:MAT.soul);
+  const set={
+    body:  M(c.body,  ALLYMATS?ALLYMATS.body:null),
+    body2: M(c.body2, ALLYMATS?ALLYMATS.body2:null),
+    ghost: M(c.ghost, ALLYMATS?ALLYMATS.ghost:null),
+    metal: M(c.metal, ALLYMATS?ALLYMATS.metal:null),
+    accent:M(c.accent,ALLYMATS?ALLYMATS.accent:null),
+    eye:   eye
+  };
+  set._made=made;
+  return set;
+}
+
+function allyBoltMat(colorHex){
+  const c=(colorHex==null)?0xc080ff:colorHex;
+  return new THREE.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:0.75,roughness:0.4});
+}
+
+/* painted folk-art materials for a thrall, in a given 4-colour palette */
+function alePaintedPalette(pal, eye){
+  if(typeof aleStdMat!=='function') return null;
+  const W=0xfff6da, made=[], reg=function(m){ made.push(m); return m; };
+  const p3=(pal[3]!==undefined?pal[3]:pal[0]);
+  const M={
+    body:  reg(aleStdMat('dots',   pal[0],pal[1],p3,    {rep:2,glow:0.26})),
+    body2: reg(aleStdMat('diamond',pal[1],pal[2],W,     {rep:2,glow:0.26})),
+    metal: reg(aleStdMat('zig',    pal[2],pal[0],W,     {rep:2,metal:0.3,rough:0.35,glow:0.26})),
+    accent:reg(aleStdMat('scales', p3,    pal[0],pal[1],{rep:2,glow:0.42})),
+    ghost: reg(aleStdMat('dots',   pal[1],pal[2],W,     {rep:2,ghost:true,glow:0.32})),
+    eye:   (eye && eye.c!=null) ? reg(new THREE.MeshStandardMaterial({color:eye.c,emissive:(eye.e!=null?eye.e:eye.c),emissiveIntensity:1.2,roughness:0.3}))
+                                : (ALLYMATS?ALLYMATS.eye:MAT.soul)
+  };
+  M._made=made; return M;
+}
+/* derive a 4-colour palette from a captured-colour record */
+function paletteFromColors(c){
+  const v=function(k,d){ return (c && c[k] && c[k].c!=null) ? c[k].c : d; };
+  const b=v('body',0x88c0a0);
+  return [ b, v('body2',b), v('accent',v('body2',0xd0b060)), v('ghost',b) ];
 }
 
 </script>
